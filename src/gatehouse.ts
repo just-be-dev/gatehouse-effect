@@ -283,8 +283,8 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
   userRolesResolver,
   name = 'RbacPolicy',
 }: {
-  requiredRolesResolver: (res: Res, act: Act) => Effectful<Role[]>;
-  userRolesResolver: (sub: Sub) => Effectful<Role[]>;
+  requiredRolesResolver: (res: Res, act: Act) => Effectful<readonly Role[]>;
+  userRolesResolver: (sub: Sub) => Effectful<readonly Role[]>;
   name?: string;
 }): Policy<Sub, Res, Act, Ctx> {
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* ({
@@ -297,8 +297,8 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
     action: Act;
     context: Ctx;
   }) {
-    const requiredRoles: Role[] = yield* resolve(requiredRolesResolver(resource, action));
-    const userRoles: Role[] = yield* resolve(userRolesResolver(subject));
+    const requiredRoles: readonly Role[] = yield* resolve(requiredRolesResolver(resource, action));
+    const userRoles: readonly Role[] = yield* resolve(userRolesResolver(subject));
     const hasRole: boolean = requiredRoles.some((role) => userRoles.includes(role));
     if (hasRole) {
       return new GrantedAccessResult({ policyType: name, reason: 'User has required role' });
@@ -618,7 +618,7 @@ function policyFactory<
     name: string,
     options: {
       roles: { [K in Act & string]: ReadonlyArray<Role> };
-      userRoles: (sub: Sub) => Effectful<Role[]>;
+      userRoles: (sub: Sub) => Effectful<readonly Role[]>;
     }
   ): Policy<Sub, Res, Act, Ctx> {
     const roleMap = options.roles as Record<string, ReadonlyArray<Role>>;
