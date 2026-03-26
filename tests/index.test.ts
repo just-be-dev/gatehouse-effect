@@ -8,7 +8,7 @@ import {
   invertPolicy,
   isGranted,
   policyFactory,
-} from "../src/gatehouse";
+} from "../src/gatehouse.js";
 
 // Define schemas for testing
 const SubjectSchema = Schema.Struct({
@@ -25,7 +25,7 @@ const ResourceSchema = Schema.Struct({
   isPublic: Schema.Boolean,
 });
 
-const ActionSchema = Schema.Literal("read", "write", "delete", "admin");
+const ActionSchema = Schema.Literals(["read", "write", "delete", "admin"]);
 
 const ContextSchema = Schema.Struct({
   clientIp: Schema.String,
@@ -74,7 +74,7 @@ describe("RBAC Policy", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => sub.roles,
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const result = await Effect.runPromise(
@@ -83,7 +83,7 @@ describe("RBAC Policy", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -114,7 +114,7 @@ describe("RBAC Policy", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => sub.roles,
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const result = await Effect.runPromise(
@@ -123,7 +123,7 @@ describe("RBAC Policy", () => {
         resource,
         action: "delete",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -150,7 +150,7 @@ describe("ABAC Policy", () => {
     };
 
     const abacPolicy = define("AbacPolicy", {
-      when: ({ subject, resource }) =>
+      when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         resource.isPublic || subject.department === resource.department,
     });
 
@@ -160,7 +160,7 @@ describe("ABAC Policy", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -185,7 +185,7 @@ describe("ABAC Policy", () => {
     };
 
     const abacPolicy = define("AbacPolicy", {
-      when: ({ subject, resource }) =>
+      when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         resource.isPublic || subject.department === resource.department,
     });
 
@@ -195,7 +195,7 @@ describe("ABAC Policy", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -223,7 +223,7 @@ describe("ReBAC Policy", () => {
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const result = await Effect.runPromise(
@@ -232,7 +232,7 @@ describe("ReBAC Policy", () => {
         resource,
         action: "write",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -258,7 +258,7 @@ describe("ReBAC Policy", () => {
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const result = await Effect.runPromise(
@@ -267,7 +267,7 @@ describe("ReBAC Policy", () => {
         resource,
         action: "write",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -301,17 +301,17 @@ describe("Policy Combinators", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => sub.roles,
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -331,17 +331,17 @@ describe("Policy Combinators", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => sub.roles,
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -361,17 +361,17 @@ describe("Policy Combinators", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => sub.roles,
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const policy = define.combine(({ or }) => or(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -391,12 +391,12 @@ describe("Policy Combinators", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (sub) => Effect.succeed(sub.roles),
+      userRoles: (sub: Subject) => Effect.succeed(sub.roles),
     });
 
     const rebacPolicy = define.rebac("RebacPolicy", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
     const nonAdmin: Subject = { ...subject, roles: ["user"] };
@@ -407,7 +407,7 @@ describe("Policy Combinators", () => {
         resource,
         action: "admin",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -421,17 +421,17 @@ describe("Policy Combinators", () => {
     };
 
     const abacPolicy = define("PublicCheck", {
-      resource: (r) => r.isPublic,
+      resource: (r: Resource) => r.isPublic,
     });
 
     const normalResult = await Effect.runPromise(
-      abacPolicy.evaluateAccess({ subject, resource, action: "read", context })
+      abacPolicy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(normalResult)).toBe(true);
 
     const notPolicy = invertPolicy(abacPolicy);
     const notResult = await Effect.runPromise(
-      notPolicy.evaluateAccess({ subject, resource, action: "read", context })
+      notPolicy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(notResult)).toBe(false);
   });
@@ -452,12 +452,22 @@ describe("define (custom policies)", () => {
 
   test("should create a policy with subject predicate", async () => {
     const policy = define("AdminOnly", {
-      subject: (sub) => sub.roles.includes("admin"),
+      subject: (sub: Subject) => sub.roles.includes("admin"),
     });
 
-    const admin: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
+    const admin: Subject = {
+      id: "user1",
+      roles: ["admin"],
+      groups: [],
+      department: "IT",
+    };
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject: admin, resource, action: "read", context })
+      policy.evaluateAccess({
+        subject: admin,
+        resource,
+        action: "read",
+        context,
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -473,7 +483,7 @@ describe("define (custom policies)", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -487,7 +497,7 @@ describe("define (custom policies)", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(granted)).toBe(true);
 
@@ -497,7 +507,7 @@ describe("define (custom policies)", () => {
         resource,
         action: "write",
         context,
-      })
+      }),
     );
     expect(isGranted(denied)).toBe(false);
   });
@@ -511,7 +521,7 @@ describe("define (custom policies)", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(read)).toBe(true);
 
@@ -521,14 +531,14 @@ describe("define (custom policies)", () => {
         resource,
         action: "delete",
         context,
-      })
+      }),
     );
     expect(isGranted(del)).toBe(false);
   });
 
   test("should create a policy with context predicate", async () => {
     const policy = define("EmergencyOverride", {
-      context: (ctx) => ctx.isEmergency,
+      context: (ctx: Context) => ctx.isEmergency,
     });
 
     const emergencyContext: Context = { ...context, isEmergency: true };
@@ -538,7 +548,7 @@ describe("define (custom policies)", () => {
         resource,
         action: "admin",
         context: emergencyContext,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -546,7 +556,8 @@ describe("define (custom policies)", () => {
   test("should create a policy with multiple conditions", async () => {
     const policy = define("SameDepartmentReadOnly", {
       action: "read",
-      when: ({ subject, resource }) => subject.department === resource.department,
+      when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
+        subject.department === resource.department,
     });
 
     const result = await Effect.runPromise(
@@ -555,24 +566,29 @@ describe("define (custom policies)", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("should respect deny intent", async () => {
     const policy = define("ExplicitDenyForAdmins", {
-      subject: (sub) => sub.roles.includes("admin"),
+      subject: (sub: Subject) => sub.roles.includes("admin"),
       intent: "deny",
     });
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
-        subject: { id: "user1", roles: ["admin"], groups: [], department: "IT" },
+        subject: {
+          id: "user1",
+          roles: ["admin"],
+          groups: [],
+          department: "IT",
+        },
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -600,19 +616,24 @@ describe("checkPermissions", () => {
     };
 
     const rbacPolicy = define.rbac("RbacPolicy", {
-      roles: { read: ["admin"], write: ["admin"], delete: ["admin"], admin: ["admin"] },
-      userRoles: (sub) => sub.roles,
+      roles: {
+        read: ["admin"],
+        write: ["admin"],
+        delete: ["admin"],
+        admin: ["admin"],
+      },
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const abacPolicy = define("PublicRead", {
-      resource: (r) => r.isPublic,
+      resource: (r: Resource) => r.isPublic,
     });
 
     const check = checkPermissions([rbacPolicy, abacPolicy]);
     const result = await Effect.runPromise(
       check({ subject, resource, action: "read", context }).pipe(
-        Effect.catch((e) => Effect.succeed(e))
-      )
+        Effect.catch((e) => Effect.succeed(e)),
+      ),
     );
     expect(result._tag).toBe("AccessGranted");
   });
@@ -632,20 +653,26 @@ describe("checkPermissions", () => {
     };
 
     const rbacPolicy = define.rbac("RbacPolicy", {
-      roles: { read: ["admin"], write: ["admin"], delete: ["admin"], admin: ["admin"] },
-      userRoles: (sub) => sub.roles,
+      roles: {
+        read: ["admin"],
+        write: ["admin"],
+        delete: ["admin"],
+        admin: ["admin"],
+      },
+      userRoles: (sub: Subject) => sub.roles,
     });
 
     const abacPolicy = define("DepartmentRead", {
       action: "read",
-      when: ({ subject, resource }) => subject.department === resource.department,
+      when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
+        subject.department === resource.department,
     });
 
     const check = checkPermissions([rbacPolicy, abacPolicy]);
     const result = await Effect.runPromise(
       check({ subject, resource, action: "write", context }).pipe(
-        Effect.catch((e) => Effect.succeed(e))
-      )
+        Effect.catch((e) => Effect.succeed(e)),
+      ),
     );
     expect(result._tag).toBe("AccessDenied");
   });
@@ -654,45 +681,69 @@ describe("checkPermissions", () => {
     const check = checkPermissions<Subject, Resource, Action, Context>([]);
     const result = await Effect.runPromise(
       check({
-        subject: { id: "user1", roles: ["admin"], groups: [], department: "IT" },
-        resource: { id: "resource1", ownerId: "user1", department: "IT", isPublic: true },
+        subject: {
+          id: "user1",
+          roles: ["admin"],
+          groups: [],
+          department: "IT",
+        },
+        resource: {
+          id: "resource1",
+          ownerId: "user1",
+          department: "IT",
+          isPublic: true,
+        },
         action: "read",
         context,
-      }).pipe(Effect.catch((e) => Effect.succeed(e)))
+      }).pipe(Effect.catch((e) => Effect.succeed(e))),
     );
     expect(result._tag).toBe("NoPoliciesError");
   });
 });
 
 describe("Effectful predicates", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   test("action as function predicate", async () => {
     const policy = define("CustomActionCheck", {
-      action: (a) => a === "read" || a === "write",
+      action: (a: Action) => a === "read" || a === "write",
     });
 
     const read = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(read)).toBe(true);
 
     const del = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "delete", context })
+      policy.evaluateAccess({ subject, resource, action: "delete", context }),
     );
     expect(isGranted(del)).toBe(false);
   });
 
   test("when predicate returning Effect", async () => {
     const policy = define("EffectfulWhen", {
-      when: ({ subject, resource }) =>
+      when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         Effect.succeed(subject.department === resource.department),
     });
 
     const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(granted)).toBe(true);
 
@@ -702,21 +753,21 @@ describe("Effectful predicates", () => {
         resource,
         action: "read",
         context,
-      })
+      }),
     );
     expect(isGranted(denied)).toBe(false);
   });
 
   test("mixed plain and Effect predicates in one policy", async () => {
     const policy = define("MixedPredicates", {
-      subject: (s) => s.roles.includes("admin"),              // plain boolean
-      resource: (r) => Effect.succeed(r.isPublic),             // Effect
-      action: "read",                                          // literal
-      context: (ctx) => !ctx.isEmergency,                     // plain boolean
+      subject: (s: Subject) => s.roles.includes("admin"), // plain boolean
+      resource: (r: Resource) => Effect.succeed(r.isPublic), // Effect
+      action: "read", // literal
+      context: (ctx: Context) => !ctx.isEmergency, // plain boolean
     });
 
     const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(granted)).toBe(true);
   });
@@ -729,11 +780,11 @@ describe("Effectful predicates", () => {
         delete: ["admin"],
         admin: ["admin"],
       },
-      userRoles: (s) => Effect.succeed(s.roles),
+      userRoles: (s: Subject) => Effect.succeed(s.roles),
     });
 
     const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(granted)).toBe(true);
   });
@@ -741,28 +792,45 @@ describe("Effectful predicates", () => {
   test("rebac with effectful resolver", async () => {
     const policy = define.rebac("EffectfulRebac", {
       relationship: "owner",
-      resolver: ({ subject, resource }) => Effect.succeed(subject.id === resource.ownerId),
+      resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
     const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(granted)).toBe(true);
   });
 });
 
 describe("Combinator named overloads", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
   test("combinePolicy with custom name for and", async () => {
-    const policy = define.combine("MyCustomAnd", ({ and }) => and(allow, allow));
+    const policy = define.combine("MyCustomAnd", ({ and }) =>
+      and(allow, allow),
+    );
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
     expect(policy.name).toBe("MyCustomAnd");
@@ -771,7 +839,7 @@ describe("Combinator named overloads", () => {
   test("combinePolicy with custom name for or", async () => {
     const policy = define.combine("MyCustomOr", ({ or }) => or(deny, allow));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
     expect(policy.name).toBe("MyCustomOr");
@@ -780,7 +848,7 @@ describe("Combinator named overloads", () => {
   test("invertPolicy with custom name appears in trace", async () => {
     const policy = invertPolicy("MyCustomNot", deny);
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
     expect(formatResult(result)).toContain("MyCustomNot");
@@ -788,9 +856,23 @@ describe("Combinator named overloads", () => {
 });
 
 describe("Edge cases", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
@@ -798,7 +880,7 @@ describe("Edge cases", () => {
   test("single policy in AND", async () => {
     const policy = define.combine(({ and }) => and(allow));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -806,7 +888,7 @@ describe("Edge cases", () => {
   test("single policy in OR", async () => {
     const policy = define.combine(({ or }) => or(deny));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -814,19 +896,19 @@ describe("Edge cases", () => {
   test("NOT(NOT(policy)) equals original", async () => {
     const doubleNot = invertPolicy(invertPolicy(allow));
     const result = await Effect.runPromise(
-      doubleNot.evaluateAccess({ subject, resource, action: "read", context })
+      doubleNot.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("intent:deny with non-matching predicates still denies", async () => {
     const policy = define("DenyButNoMatch", {
-      subject: (s) => s.roles.includes("nonexistent"),
+      subject: (s: Subject) => s.roles.includes("nonexistent"),
       intent: "deny",
     });
 
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     // Predicates don't match → DeniedAccessResult("Policy predicate did not match")
     // NOT a grant — deny intent only fires when predicates DO match
@@ -835,26 +917,40 @@ describe("Edge cases", () => {
 
   test("intent:deny with matching predicates denies", async () => {
     const policy = define("DenyAndMatch", {
-      subject: (s) => s.roles.includes("admin"),
+      subject: (s: Subject) => s.roles.includes("admin"),
       intent: "deny",
     });
 
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(false);
   });
 });
 
 describe("formatResult and getDisplayTrace", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   test("formatResult on granted policy result", async () => {
     const policy = define("GrantPolicy", {});
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     const formatted = formatResult(result);
     expect(formatted).toContain("GrantPolicy");
@@ -864,7 +960,7 @@ describe("formatResult and getDisplayTrace", () => {
   test("formatResult on denied policy result", async () => {
     const policy = define("DenyPolicy", { subject: () => false });
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     const formatted = formatResult(result);
     expect(formatted).toContain("DenyPolicy");
@@ -876,7 +972,7 @@ describe("formatResult and getDisplayTrace", () => {
     const p2 = define("PolicyB", {});
     const policy = define.combine("CombinedOr", ({ or }) => or(p1, p2));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     const formatted = formatResult(result);
     expect(formatted).toContain("PolicyA");
@@ -887,7 +983,7 @@ describe("formatResult and getDisplayTrace", () => {
     const policy = define("TraceGrant", {});
     const check = checkPermissions([policy]);
     const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context })
+      check({ subject, resource, action: "read", context }),
     );
     const trace = getDisplayTrace(result);
     expect(trace).toContain("TraceGrant");
@@ -899,8 +995,8 @@ describe("formatResult and getDisplayTrace", () => {
     const check = checkPermissions([policy]);
     const result = await Effect.runPromise(
       check({ subject, resource, action: "read", context }).pipe(
-        Effect.catch((e) => Effect.succeed(e))
-      )
+        Effect.catch((e) => Effect.succeed(e)),
+      ),
     );
     const trace = getDisplayTrace(result);
     expect(trace).toContain("TraceDeny");
@@ -909,9 +1005,23 @@ describe("formatResult and getDisplayTrace", () => {
 });
 
 describe("checkPermissions ordering and traces", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   test("first-grant-wins: stops at first granting policy", async () => {
     let thirdPolicyCalled = false;
@@ -928,7 +1038,7 @@ describe("checkPermissions ordering and traces", () => {
 
     const check = checkPermissions([deny1, grant, spy]);
     const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context })
+      check({ subject, resource, action: "read", context }),
     );
 
     expect(result._tag).toBe("AccessGranted");
@@ -942,7 +1052,7 @@ describe("checkPermissions ordering and traces", () => {
 
     const check = checkPermissions([p1, p2]);
     const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context })
+      check({ subject, resource, action: "read", context }),
     );
 
     expect(result._tag).toBe("AccessGranted");
@@ -957,8 +1067,8 @@ describe("checkPermissions ordering and traces", () => {
     const check = checkPermissions([p1, p2, p3]);
     const result = await Effect.runPromise(
       check({ subject, resource, action: "read", context }).pipe(
-        Effect.catch((e) => Effect.succeed(e))
-      )
+        Effect.catch((e) => Effect.succeed(e)),
+      ),
     );
 
     expect(result._tag).toBe("AccessDenied");
@@ -970,60 +1080,74 @@ describe("checkPermissions ordering and traces", () => {
 });
 
 describe("combinePolicy", () => {
-  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
-  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
-  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+  const subject: Subject = {
+    id: "user1",
+    roles: ["admin"],
+    groups: [],
+    department: "IT",
+  };
+  const resource: Resource = {
+    id: "r1",
+    ownerId: "user1",
+    department: "IT",
+    isPublic: true,
+  };
+  const context: Context = {
+    clientIp: "127.0.0.1",
+    timestamp: Date.now(),
+    isEmergency: false,
+  };
 
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
   test("and combinator grants when all grant", async () => {
-    const policy = combinePolicy(({ and }) => and(allow, allow));
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ and }) => and(allow, allow));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("and combinator denies when any denies", async () => {
-    const policy = combinePolicy(({ and }) => and(allow, deny));
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ and }) => and(allow, deny));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(false);
   });
 
   test("or combinator grants when any grants", async () => {
-    const policy = combinePolicy(({ or }) => or(deny, allow));
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ or }) => or(deny, allow));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("not combinator inverts result", async () => {
-    const policy = combinePolicy(({ not }) => not(deny));
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ not }) => not(deny));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("nested composition: and(policy1, or(policy3, not(policy2)))", async () => {
-    const policy = combinePolicy(({ and, or, not }) =>
-      and(allow, or(deny, not(deny)))
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ and, or, not }) =>
+      and(allow, or(deny, not(deny))),
     );
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
 
   test("named combinePolicy sets policy name", async () => {
-    const policy = combinePolicy("MyCombo", ({ and }) => and(allow, allow));
+    const policy = combinePolicy<Subject, Resource, Action, Context>("MyCombo", ({ and }) => and(allow, allow));
     expect(policy.name).toBe("MyCombo");
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -1031,7 +1155,7 @@ describe("combinePolicy", () => {
   test("factory combine method works", async () => {
     const policy = define.combine(({ and, not }) => and(allow, not(deny)));
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -1040,7 +1164,7 @@ describe("combinePolicy", () => {
     const policy = define.combine("FactoryCombo", ({ or }) => or(deny, allow));
     expect(policy.name).toBe("FactoryCombo");
     const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context }),
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -1050,7 +1174,9 @@ describe("combinePolicy", () => {
     const p2 = define("B", { intent: "deny" });
     const p3 = define("C", {});
 
-    const policy = combinePolicy(({ and, or, not }) => and(p1, or(p2, not(p3))));
+    const policy = combinePolicy<Subject, Resource, Action, Context>(({ and, or, not }) =>
+      and(p1, or(p2, not(p3))),
+    );
     expect(policy.name).toBe("A & (B | !C)");
   });
 });
