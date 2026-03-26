@@ -20,6 +20,7 @@ description = "Run tests"
 run = "bun test"
 
 [tasks.typecheck]
+alias = ["type-check"]
 description = "Type check without emitting"
 run = "tsc --noEmit"
 
