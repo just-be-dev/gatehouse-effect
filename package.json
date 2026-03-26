@@ -2,7 +2,10 @@
   "name": "gatehouse-effect",
   "module": "src/gatehouse.ts",
   "description": "A TypeScript library for building and managing authorization policies.",
-  "author": "gr4vityWall",
+  "author": "Justin Bennett <oss@just-be.dev>",
+  "contributors": [
+    "gr4vityWall (https://github.com/9Morello)"
+  ],
   "license": "Apache-2.0",
   "homepage": "https://github.com/9Morello/gatehouse-ts",
   "repository": {

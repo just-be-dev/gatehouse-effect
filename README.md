@@ -2,7 +2,7 @@
 
 Gatehouse-TS is a flexible, zero-dependencies authorization library written in TypeScript. It combines role-based (RBAC), attribute-based (ABAC), and relationship-based (ReBAC) access control policies. Port of the [Gatehouse authorization library for Rust](https://github.com/thepartly/gatehouse/). The original authors did a fantastic job at creating an easy to use API, and were kind enough to let this library be named after Gatehouse.
 
-Credits for the original API design, Rust implementation and usage instructions go to [Hardbyte](https://hardbyte.nz/) and [Partly](https://partly.com/). 
+Credits for the original API design, Rust implementation and usage instructions go to [Hardbyte](https://hardbyte.nz/) and [Partly](https://partly.com/). The TypeScript implementation was originally created by [gr4vityWall](https://github.com/9Morello) as [gatehouse-ts](https://github.com/9Morello/gatehouse-ts). This project is an Effect-TS port of that work.
 
 ## Features
 - **Multi-paradigm Authorization**: Support for RBAC, ABAC, and ReBAC patterns
