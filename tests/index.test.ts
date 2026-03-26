@@ -7,9 +7,9 @@ import {
   buildOrPolicy,
   buildRbacPolicy,
   buildRebacPolicy,
-  PermissionChecker,
-  PolicyBuilder,
-  PolicyEffect,
+  checkPermissions,
+  isGranted,
+  makePolicy,
 } from "../src/gatehouse";
 
 // Define types for testing
@@ -82,7 +82,7 @@ describe("RBAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should deny access when user doesn't have required role", async () => {
@@ -131,7 +131,7 @@ describe("RBAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 });
 
@@ -173,7 +173,7 @@ describe("ABAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should deny access when attributes don't match", async () => {
@@ -213,7 +213,7 @@ describe("ABAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 });
 
@@ -254,7 +254,7 @@ describe("ReBAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should deny access when relationship doesn't exist", async () => {
@@ -293,7 +293,7 @@ describe("ReBAC Policy", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 });
 
@@ -348,7 +348,7 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("AND policy should deny access when any policy denies access", async () => {
@@ -401,7 +401,7 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 
   test("OR policy should grant access when any policy grants access", async () => {
@@ -454,7 +454,7 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("OR policy should deny access when all policies deny access", async () => {
@@ -508,7 +508,7 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 
   test("NOT policy should invert the result", async () => {
@@ -546,7 +546,7 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(normalResult.isGranted()).toBe(true);
+    expect(isGranted(normalResult)).toBe(true);
 
     // But the NOT policy inverts it
     const notPolicy = buildNotPolicy({
@@ -560,11 +560,11 @@ describe("Policy Combinators", () => {
         context,
       })
     );
-    expect(notResult.isGranted()).toBe(false);
+    expect(isGranted(notResult)).toBe(false);
   });
 });
 
-describe("PolicyBuilder", () => {
+describe("makePolicy", () => {
   test("should create a policy with subjects condition", async () => {
     const subject: Subject = {
       id: "user1",
@@ -587,11 +587,9 @@ describe("PolicyBuilder", () => {
       isEmergency: false,
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
-      "AdminOnly",
-    )
-      .subjects((sub) => Effect.succeed(sub.roles.includes("admin")))
-      .build();
+    const policy = makePolicy<Subject, Resource, Action, Context>("AdminOnly", {
+      subject: (sub) => Effect.succeed(sub.roles.includes("admin")),
+    });
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -601,7 +599,7 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should create a policy with resources condition", async () => {
@@ -626,11 +624,12 @@ describe("PolicyBuilder", () => {
       isEmergency: false,
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
+    const policy = makePolicy<Subject, Resource, Action, Context>(
       "PublicResourcesOnly",
-    )
-      .resources((res) => Effect.succeed(res.isPublic))
-      .build();
+      {
+        resource: (res) => Effect.succeed(res.isPublic),
+      },
+    );
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -640,7 +639,7 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should create a policy with action condition", async () => {
@@ -665,11 +664,9 @@ describe("PolicyBuilder", () => {
       isEmergency: false,
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
-      "ReadOnly",
-    )
-      .actions((act) => Effect.succeed(act === "read"))
-      .build();
+    const policy = makePolicy<Subject, Resource, Action, Context>("ReadOnly", {
+      action: (act) => Effect.succeed(act === "read"),
+    });
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -679,7 +676,7 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should create a policy with context condition", async () => {
@@ -704,11 +701,12 @@ describe("PolicyBuilder", () => {
       isEmergency: true, // Emergency override
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
+    const policy = makePolicy<Subject, Resource, Action, Context>(
       "EmergencyOverride",
-    )
-      .context((ctx) => Effect.succeed(ctx.isEmergency))
-      .build();
+      {
+        context: (ctx) => Effect.succeed(ctx.isEmergency),
+      },
+    );
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -718,7 +716,7 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should create a policy with multiple conditions", async () => {
@@ -743,14 +741,14 @@ describe("PolicyBuilder", () => {
       isEmergency: false,
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
+    const policy = makePolicy<Subject, Resource, Action, Context>(
       "SameDepartmentReadOnly",
-    )
-      .actions((act) => Effect.succeed(act === "read"))
-      .when(({ subject, resource }) =>
-        Effect.succeed(subject.department === resource.department)
-      )
-      .build();
+      {
+        action: (act) => Effect.succeed(act === "read"),
+        when: ({ subject, resource }) =>
+          Effect.succeed(subject.department === resource.department),
+      },
+    );
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -760,7 +758,7 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(true);
+    expect(isGranted(result)).toBe(true);
   });
 
   test("should respect deny effect", async () => {
@@ -785,12 +783,13 @@ describe("PolicyBuilder", () => {
       isEmergency: false,
     };
 
-    const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
+    const policy = makePolicy<Subject, Resource, Action, Context>(
       "ExplicitDenyForAdmins",
-    )
-      .subjects((sub) => Effect.succeed(sub.roles.includes("admin")))
-      .effect(PolicyEffect.Deny)
-      .build();
+      {
+        subject: (sub) => Effect.succeed(sub.roles.includes("admin")),
+        intent: 'deny',
+      },
+    );
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -800,11 +799,11 @@ describe("PolicyBuilder", () => {
         context,
       })
     );
-    expect(result.isGranted()).toBe(false);
+    expect(isGranted(result)).toBe(false);
   });
 });
 
-describe("PermissionChecker", () => {
+describe("checkPermissions", () => {
   test("should grant access when any policy grants access", async () => {
     const subject: Subject = {
       id: "user1",
@@ -842,19 +841,17 @@ describe("PermissionChecker", () => {
       condition: ({ resource }) => Effect.succeed(resource.isPublic),
     });
 
-    const checker = new PermissionChecker<Subject, Resource, Action, Context>();
-    checker.addPolicy(rbacPolicy);
-    checker.addPolicy(abacPolicy);
+    const check = checkPermissions([rbacPolicy, abacPolicy]);
 
     const result = await Effect.runPromise(
-      checker.evaluateAccess({
+      check({
         subject,
         resource,
         action,
         context,
       }).pipe(Effect.catch((e) => Effect.succeed(e)))
     );
-    expect(result.isGranted()).toBe(true);
+    expect(result._tag).toBe("AccessGranted");
   });
 
   test("should deny access when all policies deny access", async () => {
@@ -897,19 +894,17 @@ describe("PermissionChecker", () => {
         ),
     });
 
-    const checker = new PermissionChecker<Subject, Resource, Action, Context>();
-    checker.addPolicy(rbacPolicy);
-    checker.addPolicy(abacPolicy);
+    const check = checkPermissions([rbacPolicy, abacPolicy]);
 
     const result = await Effect.runPromise(
-      checker.evaluateAccess({
+      check({
         subject,
         resource,
         action,
         context,
       }).pipe(Effect.catch((e) => Effect.succeed(e)))
     );
-    expect(result.isGranted()).toBe(false);
+    expect(result._tag).toBe("AccessDenied");
   });
 
   test("should deny access when no policies are configured", async () => {
@@ -934,15 +929,15 @@ describe("PermissionChecker", () => {
       isEmergency: false,
     };
 
-    const checker = new PermissionChecker<Subject, Resource, Action, Context>();
+    const check = checkPermissions<Subject, Resource, Action, Context>([]);
     const result = await Effect.runPromise(
-      checker.evaluateAccess({
+      check({
         subject,
         resource,
         action,
         context,
       }).pipe(Effect.catch((e) => Effect.succeed(e)))
     );
-    expect(result.isGranted()).toBe(false);
+    expect(result._tag).toBe("NoPoliciesError");
   });
 });

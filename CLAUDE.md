@@ -16,14 +16,15 @@ gatehouse-effect is an Effect-TS port of [gatehouse-ts](https://github.com/9More
 
 ## Architecture
 
-Single-module library (`src/gatehouse.ts`) exporting:
+Single-module functional library (`src/gatehouse.ts`). All data types are pure data (no methods) — use standalone functions to inspect results.
 
-- **Policy types:** `buildRbacPolicy`, `buildAbacPolicy`, `buildRebacPolicy` — factory functions for specific authorization models
+- **Policy factories:** `buildRbacPolicy`, `buildAbacPolicy`, `buildRebacPolicy` — create policies for specific authorization models
 - **Combinators:** `buildAndPolicy`, `buildOrPolicy`, `buildNotPolicy` — compose policies with boolean logic
-- **PolicyBuilder** — fluent builder for custom policies with subject/resource/action/context predicates
-- **PermissionChecker** — evaluates multiple policies sequentially (first-grant-wins), returns `Effect<AccessGranted, AccessDenied | NoPoliciesError>`
+- **`makePolicy`** — creates custom policies from predicate functions (subject/resource/action/context/when)
+- **`checkPermissions`** — curried function: takes policies array, returns evaluator. First-grant-wins. Returns `Effect<AccessGranted, AccessDenied | NoPoliciesError>`
+- **Result functions:** `isGranted`, `formatResult`, `getDisplayTrace`, `formatTrace` — operate on `PolicyEvalResult` or access results
 
-All policy predicates and resolvers return `Effect.Effect<T>` (not raw values or Promises). `AccessDenied` and `NoPoliciesError` are `Data.TaggedError` types in the Effect error channel. Use `Effect.merge` to unify success/error channels for inspection.
+All predicates/resolvers return `Effect.Effect<T>`. Errors use `Schema.TaggedErrorClass`, results use `Schema.TaggedClass`/`Data.TaggedClass`. Use `_tag` or `Match.valueTags` for discrimination.
 
 <!-- effect-solutions:start -->
 ## Effect Best Practices
