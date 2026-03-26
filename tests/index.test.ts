@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { Effect } from "effect";
 import {
   buildAbacPolicy,
   buildAndPolicy,
@@ -8,6 +9,7 @@ import {
   buildRebacPolicy,
   PermissionChecker,
   PolicyBuilder,
+  PolicyEffect,
 } from "../src/gatehouse";
 
 // Define types for testing
@@ -64,20 +66,22 @@ describe("RBAC Policy", () => {
       string
     >({
       requiredRolesResolver: (_, act) => {
-        if (act === "read") return ["user", "admin"];
-        if (act === "write") return ["editor", "admin"];
-        if (act === "delete") return ["admin"];
-        return ["admin"];
+        if (act === "read") return Effect.succeed(["user", "admin"]);
+        if (act === "write") return Effect.succeed(["editor", "admin"]);
+        if (act === "delete") return Effect.succeed(["admin"]);
+        return Effect.succeed(["admin"]);
       },
-      userRolesResolver: (sub) => sub.roles,
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
-    const result = await rbacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      rbacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -111,20 +115,22 @@ describe("RBAC Policy", () => {
       string
     >({
       requiredRolesResolver: (_, act) => {
-        if (act === "read") return ["user", "admin"];
-        if (act === "write") return ["editor", "admin"];
-        if (act === "delete") return ["admin"];
-        return ["admin"];
+        if (act === "read") return Effect.succeed(["user", "admin"]);
+        if (act === "write") return Effect.succeed(["editor", "admin"]);
+        if (act === "delete") return Effect.succeed(["admin"]);
+        return Effect.succeed(["admin"]);
       },
-      userRolesResolver: (sub) => sub.roles,
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
-    const result = await rbacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      rbacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 });
@@ -153,18 +159,20 @@ describe("ABAC Policy", () => {
     };
 
     const abacPolicy = buildAbacPolicy<Subject, Resource, Action, Context>({
-      condition: ({ subject, resource }) => {
-        // Allow access if resource is public or user is in the same department
-        return resource.isPublic || subject.department === resource.department;
-      },
+      condition: ({ subject, resource }) =>
+        Effect.succeed(
+          resource.isPublic || subject.department === resource.department
+        ),
     });
 
-    const result = await abacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      abacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -191,18 +199,20 @@ describe("ABAC Policy", () => {
     };
 
     const abacPolicy = buildAbacPolicy<Subject, Resource, Action, Context>({
-      condition: ({ subject, resource }) => {
-        // Allow access if resource is public or user is in the same department
-        return resource.isPublic || subject.department === resource.department;
-      },
+      condition: ({ subject, resource }) =>
+        Effect.succeed(
+          resource.isPublic || subject.department === resource.department
+        ),
     });
 
-    const result = await abacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      abacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 });
@@ -232,17 +242,18 @@ describe("ReBAC Policy", () => {
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => {
-        return subject.id === resource.ownerId;
-      },
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
-    const result = await rebacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      rebacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -270,17 +281,18 @@ describe("ReBAC Policy", () => {
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => {
-        return subject.id === resource.ownerId;
-      },
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
-    const result = await rebacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      rebacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 });
@@ -315,24 +327,27 @@ describe("Policy Combinators", () => {
       Context,
       string
     >({
-      requiredRolesResolver: () => ["admin", "user"],
-      userRolesResolver: (sub) => sub.roles,
+      requiredRolesResolver: () => Effect.succeed(["admin", "user"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
     const andPolicy = buildAndPolicy({
       policies: [rbacPolicy, rebacPolicy],
     });
-    const result = await andPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      andPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -365,24 +380,27 @@ describe("Policy Combinators", () => {
       Context,
       string
     >({
-      requiredRolesResolver: () => ["admin", "user"],
-      userRolesResolver: (sub) => sub.roles,
+      requiredRolesResolver: () => Effect.succeed(["admin", "user"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
     const andPolicy = buildAndPolicy({
       policies: [rbacPolicy, rebacPolicy],
     });
-    const result = await andPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      andPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 
@@ -415,24 +433,27 @@ describe("Policy Combinators", () => {
       Context,
       string
     >({
-      requiredRolesResolver: () => ["admin", "user"],
-      userRolesResolver: (sub) => sub.roles,
+      requiredRolesResolver: () => Effect.succeed(["admin", "user"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
     const orPolicy = buildOrPolicy({
       policies: [rbacPolicy, rebacPolicy],
     });
-    const result = await orPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      orPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -466,24 +487,27 @@ describe("Policy Combinators", () => {
       string
     >({
       requiredRolesResolver: (_, act) =>
-        act === "admin" ? ["admin"] : ["user"],
-      userRolesResolver: (sub) => sub.roles,
+        Effect.succeed(act === "admin" ? ["admin"] : ["user"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const rebacPolicy = buildRebacPolicy<Subject, Resource, Action, Context>({
       relationship: "owner",
-      resolver: ({ subject, resource }) => subject.id === resource.ownerId,
+      resolver: ({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId),
     });
 
     const orPolicy = buildOrPolicy({
       policies: [rbacPolicy, rebacPolicy],
     });
-    const result = await orPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      orPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 
@@ -510,28 +534,32 @@ describe("Policy Combinators", () => {
     };
 
     const abacPolicy = buildAbacPolicy<Subject, Resource, Action, Context>({
-      condition: ({ resource }) => resource.isPublic,
+      condition: ({ resource }) => Effect.succeed(resource.isPublic),
     });
 
     // This would normally grant access since resource is public
-    const normalResult = await abacPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const normalResult = await Effect.runPromise(
+      abacPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(normalResult.isGranted()).toBe(true);
 
     // But the NOT policy inverts it
     const notPolicy = buildNotPolicy({
       policy: abacPolicy,
     });
-    const notResult = await notPolicy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const notResult = await Effect.runPromise(
+      notPolicy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(notResult.isGranted()).toBe(false);
   });
 });
@@ -562,15 +590,17 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "AdminOnly",
     )
-      .subjects((sub) => sub.roles.includes("admin"))
+      .subjects((sub) => Effect.succeed(sub.roles.includes("admin")))
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -599,15 +629,17 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "PublicResourcesOnly",
     )
-      .resources((res) => res.isPublic)
+      .resources((res) => Effect.succeed(res.isPublic))
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -636,15 +668,17 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "ReadOnly",
     )
-      .actions((act) => act === "read")
+      .actions((act) => Effect.succeed(act === "read"))
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -673,15 +707,17 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "EmergencyOverride",
     )
-      .context((ctx) => ctx.isEmergency)
+      .context((ctx) => Effect.succeed(ctx.isEmergency))
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -710,18 +746,20 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "SameDepartmentReadOnly",
     )
-      .actions((act) => act === "read")
-      .when(
-        ({ subject, resource }) => subject.department === resource.department,
+      .actions((act) => Effect.succeed(act === "read"))
+      .when(({ subject, resource }) =>
+        Effect.succeed(subject.department === resource.department)
       )
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -750,16 +788,18 @@ describe("PolicyBuilder", () => {
     const policy = new PolicyBuilder<Subject, Resource, Action, Context>(
       "ExplicitDenyForAdmins",
     )
-      .subjects((sub) => sub.roles.includes("admin"))
-      .effect("Deny")
+      .subjects((sub) => Effect.succeed(sub.roles.includes("admin")))
+      .effect(PolicyEffect.Deny)
       .build();
 
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 });
@@ -794,24 +834,26 @@ describe("PermissionChecker", () => {
       Context,
       string
     >({
-      requiredRolesResolver: () => ["admin"],
-      userRolesResolver: (sub) => sub.roles,
+      requiredRolesResolver: () => Effect.succeed(["admin"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const abacPolicy = buildAbacPolicy<Subject, Resource, Action, Context>({
-      condition: ({ resource }) => resource.isPublic,
+      condition: ({ resource }) => Effect.succeed(resource.isPublic),
     });
 
     const checker = new PermissionChecker<Subject, Resource, Action, Context>();
     checker.addPolicy(rbacPolicy);
     checker.addPolicy(abacPolicy);
 
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      checker.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      }).pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -844,25 +886,29 @@ describe("PermissionChecker", () => {
       Context,
       string
     >({
-      requiredRolesResolver: () => ["admin"],
-      userRolesResolver: (sub) => sub.roles,
+      requiredRolesResolver: () => Effect.succeed(["admin"]),
+      userRolesResolver: (sub) => Effect.succeed(sub.roles),
     });
 
     const abacPolicy = buildAbacPolicy<Subject, Resource, Action, Context>({
       condition: ({ subject, resource, action }) =>
-        subject.department === resource.department && action === "read",
+        Effect.succeed(
+          subject.department === resource.department && action === "read"
+        ),
     });
 
     const checker = new PermissionChecker<Subject, Resource, Action, Context>();
     checker.addPolicy(rbacPolicy);
     checker.addPolicy(abacPolicy);
 
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      checker.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      }).pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
     expect(result.isGranted()).toBe(false);
   });
 
@@ -889,12 +935,14 @@ describe("PermissionChecker", () => {
     };
 
     const checker = new PermissionChecker<Subject, Resource, Action, Context>();
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
-    });
+    const result = await Effect.runPromise(
+      checker.evaluateAccess({
+        subject,
+        resource,
+        action,
+        context,
+      }).pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
     expect(result.isGranted()).toBe(false);
   });
 });

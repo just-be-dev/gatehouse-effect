@@ -1,28 +1,36 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Effect-TS/language-service/refs/heads/main/schema.json",
   "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
-    "target": "ES2020",
-    "module": "ESNext",
+    // Module system (library)
+    "target": "ES2022",
+    "module": "NodeNext",
     "moduleDetection": "force",
-    "allowJs": true,
-    "declaration": true,
-    "outDir": "dist",
-
-    // Bundler mode
-    "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
 
-    // Best practices
+    // Output
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+
+    // Type safety
     "strict": true,
-    "skipLibCheck": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
 
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": true,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    // Performance
+    "incremental": true,
+    "skipLibCheck": true,
+
+    // Effect Language Service
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": ["src/**/*.ts"]
 }

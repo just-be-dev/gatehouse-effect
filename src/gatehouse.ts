@@ -1,51 +1,74 @@
+import { Data, Effect } from 'effect';
+
 /**
  * Operation types for combining policies.
  */
-const CombineOp = Object.freeze({
+const CombineOp = {
   And: 'AND',
   Or: 'OR',
   Not: 'NOT',
-});
+} as const;
 
 type Operation = (typeof CombineOp)[keyof typeof CombineOp];
 
 /**
- * Base class for policy evaluation results.
- * Contains information about whether access was granted and why.
+ * Represents the intended effect of a policy.
+ * `Allow` means the policy grants access; `Deny` means it denies access.
+ *
+ * Renamed from `Effect` to avoid conflict with the Effect library.
  */
-abstract class PolicyEvalResult {
-  public readonly policyType: string;
-  public readonly reason: string | null;
-  constructor({ policyType, reason }: { policyType: string; reason?: string | null }) {
-    this.policyType = policyType;
-    this.reason = reason ?? null;
-  }
+const PolicyEffect = {
+  Allow: 'Allow',
+  Deny: 'Deny',
+} as const;
 
-  abstract isGranted(): boolean;
-  abstract format(): string;
+type IntendedEffect = (typeof PolicyEffect)[keyof typeof PolicyEffect];
+
+// ---- Result Types ----
+
+/**
+ * Common interface for all policy evaluation results.
+ */
+interface PolicyEvalResult {
+  readonly policyType: string;
+  readonly reason: string | null;
+  isGranted(): boolean;
+  format(): string;
 }
 
 /**
  * Represents a successful policy evaluation that grants access.
  */
-class GrantedAccessResult extends PolicyEvalResult {
+class GrantedAccessResult
+  extends Data.TaggedClass('GrantedAccessResult')<{
+    readonly policyType: string;
+    readonly reason: string | null;
+  }>
+  implements PolicyEvalResult
+{
   isGranted(): boolean {
     return true;
   }
   format(): string {
-    return `✔ ${this.policyType} GRANTED${this.reason ? ' ' + this.reason : ''}`;
+    return `\u2714 ${this.policyType} GRANTED${this.reason ? ' ' + this.reason : ''}`;
   }
 }
 
 /**
  * Represents a failed policy evaluation that denies access.
  */
-class DeniedAccessResult extends PolicyEvalResult {
+class DeniedAccessResult
+  extends Data.TaggedClass('DeniedAccessResult')<{
+    readonly policyType: string;
+    readonly reason: string | null;
+  }>
+  implements PolicyEvalResult
+{
   isGranted(): boolean {
     return false;
   }
   format(): string {
-    return `✘ ${this.policyType} DENIED: ${this.reason ? ' ' + this.reason : ''}`;
+    return `\u2718 ${this.policyType} DENIED: ${this.reason ? ' ' + this.reason : ''}`;
   }
 }
 
@@ -53,38 +76,24 @@ class DeniedAccessResult extends PolicyEvalResult {
  * Represents a combined result from multiple policies.
  * Used for AND, OR, and NOT policy combinations.
  */
-class CombinedResult extends PolicyEvalResult {
-  private readonly outcome: boolean;
-  private readonly operation: Operation;
-  private readonly children: PolicyEvalResult[];
-
-  constructor({
-    policyType,
-    outcome,
-    operation,
-    children,
-  }: {
-    policyType: string;
-    outcome: boolean;
-    operation: Operation;
-    children: PolicyEvalResult[];
-  }) {
-    super({ policyType, reason: null });
-    this.outcome = outcome;
-    this.operation = operation;
-    this.children = children;
-  }
+class CombinedResult
+  extends Data.TaggedClass('CombinedResult')<{
+    readonly policyType: string;
+    readonly reason: string | null;
+    readonly outcome: boolean;
+    readonly operation: Operation;
+    readonly children: ReadonlyArray<PolicyEvalResult>;
+  }>
+  implements PolicyEvalResult
+{
   isGranted(): boolean {
     return this.outcome;
   }
   format(): string {
-    const outcomeChar: string = this.outcome ? '✔' : '✘';
+    const outcomeChar: string = this.outcome ? '\u2714' : '\u2718';
     const toplevelMessage = `${outcomeChar} ${this.policyType} (${this.operation})`;
-    return [toplevelMessage, ...this.children.map((child) => '  ' + child.format())].join(
-      '\n'
-    );
+    return [toplevelMessage, ...this.children.map((child) => '  ' + child.format())].join('\n');
   }
-
   display() {
     console.log(this.format());
   }
@@ -93,101 +102,32 @@ class CombinedResult extends PolicyEvalResult {
 /**
  * Contains the full evaluation trace for debugging policy decisions.
  */
-class EvalTrace {
-  private readonly root: PolicyEvalResult | null;
-
-  constructor(root: PolicyEvalResult | null = null) {
-    this.root = root;
-  }
-
+class EvalTrace
+  extends Data.TaggedClass('EvalTrace')<{
+    readonly root: PolicyEvalResult | null;
+  }>
+{
   format(): string {
     return this.root?.format() || 'No evaluation trace available';
   }
 }
 
+// ---- Access Evaluation Results ----
+
 /**
- * Final result of an access evaluation.
- * Contains the outcome (granted/denied), reason, and full evaluation trace.
- *
- * @example
- * const result = await permissionChecker.evaluateAccess({
- *   subject: user,
- *   resource: document,
- *   action: "edit",
- *   context: {}
- * });
- *
- * if (result.isGranted()) {
- *   // Allow the action
- * } else {
- *   console.log("Access denied:", result.getDisplayTrace());
- * }
+ * Represents a granted access evaluation result.
  */
-class AccessEvaluation {
-  private readonly outcome: 'Granted' | 'Denied';
-  private readonly trace: EvalTrace;
-  private readonly policyType: string | null;
-  public readonly reason: string | null;
-  private constructor({
-    outcome,
-    reason,
-    policyType,
-    trace,
-  }:
-    | {
-        outcome: 'Granted';
-        reason?: string | null;
-        policyType: string;
-        trace: EvalTrace;
-      }
-    | {
-        outcome: 'Denied';
-        reason: string;
-        policyType?: null;
-        trace: EvalTrace;
-      }) {
-    this.outcome = outcome;
-    this.trace = trace;
-    this.reason = reason || null;
-    this.policyType = policyType || null;
+class AccessGranted
+  extends Data.TaggedClass('AccessGranted')<{
+    readonly policyType: string;
+    readonly reason: string | null;
+    readonly trace: EvalTrace;
+  }>
+{
+  isGranted(): true {
+    return true;
   }
 
-  static denied(reason: string, trace: EvalTrace): AccessEvaluation {
-    return new AccessEvaluation({
-      reason,
-      policyType: null,
-      trace,
-      outcome: 'Denied',
-    });
-  }
-
-  static granted(
-    policyType: string,
-    trace: EvalTrace,
-    reason: string | null = null
-  ): AccessEvaluation {
-    return new AccessEvaluation({
-      reason,
-      policyType,
-      trace,
-      outcome: 'Granted',
-    });
-  }
-
-  /**
-   * Returns whether access was granted.
-   *
-   * @returns true if access was granted, false otherwise
-   */
-  isGranted(): boolean {
-    return this.outcome === 'Granted';
-  }
-
-  /**
-   * Returns a formatted string with the evaluation trace for debugging.
-   *
-   * @returns Formatted evaluation trace
-   */
   getDisplayTrace(): string {
     const traceString = this.trace.format();
     return traceString !== 'No evaluation trace available'
@@ -195,198 +135,124 @@ class AccessEvaluation {
       : `\n(${traceString})`;
   }
 
-  /**
-   * Prints the evaluation result to the console.
-   */
   print() {
-    if (this.outcome === 'Granted') {
-      console.log(
-        `[GRANTED] by ${this.policyType}${this.reason ? ` - ${this.reason}` : ''}`
-      );
-    } else {
-      console.log(`[DENIED] - ${this.reason}`);
-    }
+    console.log(
+      `[GRANTED] by ${this.policyType}${this.reason ? ` - ${this.reason}` : ''}`
+    );
   }
 }
 
 /**
- * Function type for evaluating access based on subject, resource, action, and context.
- *
- * @template Subject - The type of the subject requesting access
- * @template Resource - The type of resource being accessed
- * @template Action - The type of action being performed
- * @template Context - Additional contextual information
+ * Represents a denied access evaluation (typed error in the Effect error channel).
  */
-type EvaluateAccess<Subject, Resource, Action, Context> = ({
-  subject,
-  resource,
-  action,
-  context,
-}: {
+class AccessDenied
+  extends Data.TaggedError('AccessDenied')<{
+    readonly reason: string;
+    readonly trace: EvalTrace;
+  }>
+{
+  isGranted(): false {
+    return false;
+  }
+
+  getDisplayTrace(): string {
+    const traceString = this.trace.format();
+    return traceString !== 'No evaluation trace available'
+      ? `\nEvaluation Trace:\n${traceString}`
+      : `\n(${traceString})`;
+  }
+
+  print() {
+    console.log(`[DENIED] - ${this.reason}`);
+  }
+}
+
+/**
+ * Error for when no policies are configured in a PermissionChecker.
+ */
+class NoPoliciesError
+  extends Data.TaggedError('NoPoliciesError')<{
+    readonly message: string;
+    readonly trace: EvalTrace;
+  }>
+{
+  isGranted(): false {
+    return false;
+  }
+
+  getDisplayTrace(): string {
+    const traceString = this.trace.format();
+    return traceString !== 'No evaluation trace available'
+      ? `\nEvaluation Trace:\n${traceString}`
+      : `\n(${traceString})`;
+  }
+
+  print() {
+    console.log(`[DENIED] - ${this.message}`);
+  }
+}
+
+// ---- Policy Types ----
+
+/**
+ * Function type for evaluating access. Returns an Effect instead of a Promise.
+ */
+type EvaluateAccess<Subject, Resource, Action, Context> = (args: {
   subject: Subject;
   resource: Resource;
   action: Action;
   context: Context;
-}) => PolicyEvalResult | Promise<PolicyEvalResult>;
+}) => Effect.Effect<PolicyEvalResult>;
 
 /**
  * Interface for all policy types in the system.
- *
- * @template Subject - The type of the subject requesting access
- * @template Resource - The type of resource being accessed
- * @template Action - The type of action being performed
- * @template Context - Additional contextual information
  */
 interface Policy<Subject, Resource, Action, Context> {
-  /**
-   * @param subject The entity requesting access.
-   * @param action The action being performed.
-   * @param resource The target resource.
-   * @param context Additional context that may affect the decision.
-   */
   readonly evaluateAccess: EvaluateAccess<Subject, Resource, Action, Context>;
-
-  /**
-   * Policy name for debugging.
-   */
   readonly name: string;
 }
 
 /**
- * Main class for evaluating access permissions. Add multiple policies to it,
- * and it will evaluate them sequentially until one grants access.
- *
- * @template Sub - The type of the subject requesting access
- * @template Res - The type of resource being accessed
- * @template Act - The type of action being performed
- * @template Ctx - Additional contextual information
- *
- * @example
- * const checker = new PermissionChecker<User, Document, string, RequestContext>();
- * checker.addPolicy(adminPolicy);
- * checker.addPolicy(ownerPolicy);
- * const result = await checker.evaluateAccess({
- *   subject: currentUser,
- *   resource: document,
- *   action: "edit",
- *   context: requestContext
- * });
- * if (result.isGranted()) {
- *   // Allow access
- * }
+ * Function type for checking if access conditions are met.
+ * Returns an Effect<boolean> instead of boolean | Promise<boolean>.
  */
-class PermissionChecker<Sub, Res, Act, Ctx> {
-  private policies: Policy<Sub, Res, Act, Ctx>[];
-  public readonly name: string = 'PermissionChecker';
-  constructor() {
-    this.policies = [];
-  }
-
-  /**
-   * Adds a policy to the permission checker.
-   * Policies are evaluated in the order they're added, with OR semantics.
-   *
-   * @param policy The policy to add
-   */
-  addPolicy(policy: Policy<Sub, Res, Act, Ctx>) {
-    this.policies.push(policy);
-  }
-
-  /**
-   * Evaluates access based on the configured policies.
-   * Policies are evaluated sequentially with OR semantics (short-circuiting on first success).
-   *
-   * @param subject The entity requesting access.
-   * @param action The action being performed.
-   * @param resource The target resource.
-   * @param context Additional context that may affect the decision.
-   * @returns AccessEvaluation result with details about the decision
-   */
-  async evaluateAccess({
-    subject,
-    resource,
-    action,
-    context,
-  }: {
-    subject: Sub;
-    resource: Res;
-    action: Act;
-    context: Ctx;
-  }): Promise<AccessEvaluation> {
-    if (!this.policies.length) {
-      const reason: string = 'No policies configured';
-      console.warn(reason);
-      const result = new DeniedAccessResult({
-        policyType: 'PermissionChecker',
-        reason,
-      });
-      return AccessEvaluation.denied(reason, new EvalTrace(result));
-    }
-
-    const policyResults: PolicyEvalResult[] = [];
-    for (const policy of this.policies) {
-      const result: PolicyEvalResult = await policy.evaluateAccess({
-        subject,
-        resource,
-        action,
-        context,
-      });
-      const resultPassed: boolean = result.isGranted();
-      policyResults.push(result);
-
-      if (resultPassed) {
-        const combined = new CombinedResult({
-          policyType: 'PermissionChecker',
-          outcome: true,
-          operation: CombineOp.Or,
-          children: policyResults,
-        });
-        return AccessEvaluation.granted(result.policyType, new EvalTrace(combined));
-      }
-    }
-
-    const combined = new CombinedResult({
-      policyType: 'PermissionChecker',
-      outcome: false,
-      operation: CombineOp.Or,
-      children: policyResults,
-    });
-    return AccessEvaluation.denied('All policies denied access', new EvalTrace(combined));
-  }
-}
+type Condition<Subject, Resource, Action, Context> = (args: {
+  subject: Subject;
+  resource: Resource;
+  action: Action;
+  context: Context;
+}) => Effect.Effect<boolean>;
 
 /**
- * Represents the intended effect of a policy.
- * `Allow` means the policy grants access; `Deny` means it denies access.
+ * Function type for resolving relationships between subjects and resources.
  */
-const Effect = Object.freeze({
-  Allow: 'Allow',
-  Deny: 'Deny',
-});
+type RelationshipResolver<Subject, Resource> = (args: {
+  subject: Subject;
+  resource: Resource;
+  relationship: string;
+}) => Effect.Effect<boolean>;
 
-type IntendedEffect = (typeof Effect)[keyof typeof Effect];
+// ---- Internal Policy ----
 
 type InternalPolicy<Sub, Res, Act, Ctx> = {
   name: string;
-
   effect: IntendedEffect;
-
   predicate: (
     subject: Sub,
     resource: Res,
     action: Act,
     context: Ctx
-  ) => boolean | Promise<boolean>;
+  ) => Effect.Effect<boolean>;
 };
 
 function transformInternalPolicy<Sub, Res, Act, Ctx>(
   internalPolicy: InternalPolicy<Sub, Res, Act, Ctx>
 ): Policy<Sub, Res, Act, Ctx> {
   const policyName: string = internalPolicy.name;
-  const effect: IntendedEffect = internalPolicy.effect;
+  const intendedEffect: IntendedEffect = internalPolicy.effect;
   return Object.freeze({
     name: policyName,
-    evaluateAccess: async ({
+    evaluateAccess: ({
       subject,
       resource,
       action,
@@ -396,270 +262,257 @@ function transformInternalPolicy<Sub, Res, Act, Ctx>(
       resource: Res;
       action: Act;
       context: Ctx;
-    }): Promise<PolicyEvalResult> => {
-      const predicateResult = await internalPolicy.predicate(
-        subject,
-        resource,
-        action,
-        context
-      );
-      if (predicateResult) {
-        if (effect === Effect.Allow) {
-          return new GrantedAccessResult({
+    }): Effect.Effect<PolicyEvalResult> =>
+      Effect.gen(function* () {
+        const predicateResult = yield* internalPolicy.predicate(
+          subject,
+          resource,
+          action,
+          context
+        );
+        if (predicateResult) {
+          if (intendedEffect === PolicyEffect.Allow) {
+            return new GrantedAccessResult({
+              policyType: policyName,
+              reason: 'Policy allowed access',
+            });
+          }
+          return new DeniedAccessResult({
             policyType: policyName,
-            reason: 'Policy allowed access',
+            reason: 'Policy denied access',
           });
         }
-
         return new DeniedAccessResult({
           policyType: policyName,
-          reason: 'Policy denied access',
+          reason: 'Policy predicate did not match',
         });
-      }
-
-      return new DeniedAccessResult({
-        policyType: policyName,
-        reason: 'Policy predicate did not match',
-      });
-    },
+      }),
   });
 }
 
+// ---- PermissionChecker ----
+
 /**
- * Function type for checking if access conditions are met.
- * Used in ABAC policies and other conditional checks.
+ * Main class for evaluating access permissions. Add multiple policies to it,
+ * and it will evaluate them sequentially until one grants access.
  *
- * @template Subject - The type of the subject requesting access
- * @template Resource - The type of resource being accessed
- * @template Action - The type of action being performed
- * @template Context - Additional contextual information
+ * `evaluateAccess` returns an Effect that succeeds with `AccessGranted`
+ * or fails with `AccessDenied | NoPoliciesError`.
+ *
+ * Use `Effect.merge` to unify both channels for inspection:
+ * ```ts
+ * const result = yield* checker.evaluateAccess({ ... }).pipe(Effect.merge)
+ * if (result.isGranted()) { ... }
+ * ```
  */
-type Condition<Subject, Resource, Action, Context> = ({
-  subject,
-  resource,
-  action,
-  context,
-}: {
-  subject: Subject;
-  resource: Resource;
-  action: Action;
-  context: Context;
-}) => boolean | Promise<boolean>;
+class PermissionChecker<Sub, Res, Act, Ctx> {
+  private policies: Policy<Sub, Res, Act, Ctx>[] = [];
+  public readonly name: string = 'PermissionChecker';
+
+  addPolicy(policy: Policy<Sub, Res, Act, Ctx>) {
+    this.policies.push(policy);
+  }
+
+  evaluateAccess({
+    subject,
+    resource,
+    action,
+    context,
+  }: {
+    subject: Sub;
+    resource: Res;
+    action: Act;
+    context: Ctx;
+  }): Effect.Effect<AccessGranted, AccessDenied | NoPoliciesError> {
+    const policies = this.policies;
+
+    if (!policies.length) {
+      const reason: string = 'No policies configured';
+      const result = new DeniedAccessResult({
+        policyType: 'PermissionChecker',
+        reason,
+      });
+      return Effect.fail(
+        new NoPoliciesError({
+          message: reason,
+          trace: new EvalTrace({ root: result }),
+        })
+      );
+    }
+
+    return Effect.gen(function* () {
+      const policyResults: PolicyEvalResult[] = [];
+
+      for (const policy of policies) {
+        const result: PolicyEvalResult = yield* policy.evaluateAccess({
+          subject,
+          resource,
+          action,
+          context,
+        });
+        policyResults.push(result);
+
+        if (result.isGranted()) {
+          const combined = new CombinedResult({
+            policyType: 'PermissionChecker',
+            reason: null,
+            outcome: true,
+            operation: CombineOp.Or,
+            children: policyResults,
+          });
+          return new AccessGranted({
+            policyType: result.policyType,
+            reason: null,
+            trace: new EvalTrace({ root: combined }),
+          });
+        }
+      }
+
+      const combined = new CombinedResult({
+        policyType: 'PermissionChecker',
+        reason: null,
+        outcome: false,
+        operation: CombineOp.Or,
+        children: policyResults,
+      });
+      return yield* new AccessDenied({
+        reason: 'All policies denied access',
+        trace: new EvalTrace({ root: combined }),
+      });
+    });
+  }
+}
+
+// ---- PolicyBuilder ----
 
 /**
  * A fluent builder for creating custom access policies.
- *
- * @template Sub - The type of the subject requesting access
- * @template Res - The type of resource being accessed
- * @template Act - The type of action being performed
- * @template Ctx - Additional contextual information
- *
- * @example
- * const readOnlyPolicy = new PolicyBuilder<User, Document, string, Context>("ReadOnly")
- *   .actions(action => action === "read")
- *   .build();
+ * Predicates now return Effect<boolean> instead of boolean | Promise<boolean>.
  */
 class PolicyBuilder<Sub, Res, Act, Ctx> {
-  private name: string;
-  private internalEffect: IntendedEffect;
+  private _name: string;
+  private _effect: IntendedEffect;
 
-  private subjectPred: ((sub: Sub) => boolean | Promise<boolean>) | null = null;
-  private resPred: ((res: Res) => boolean | Promise<boolean>) | null = null;
-  private actionPred: ((act: Act) => boolean | Promise<boolean>) | null = null;
-  private ctxPred: ((ctx: Ctx) => boolean | Promise<boolean>) | null = null;
+  private subjectPred: ((sub: Sub) => Effect.Effect<boolean>) | null = null;
+  private resPred: ((res: Res) => Effect.Effect<boolean>) | null = null;
+  private actionPred: ((act: Act) => Effect.Effect<boolean>) | null = null;
+  private ctxPred: ((ctx: Ctx) => Effect.Effect<boolean>) | null = null;
   private extraConditionPred: Condition<Sub, Res, Act, Ctx> | null = null;
 
   constructor(name: string) {
-    this.name = name;
-    this.internalEffect = Effect.Allow;
+    this._name = name;
+    this._effect = PolicyEffect.Allow;
   }
 
-  /**
-   * Sets the policy's effect (Allow or Deny).
-   * Default is Allow if not specified.
-   *
-   * @param effect The intended effect (Allow or Deny)
-   */
   effect(effect: IntendedEffect) {
-    this.internalEffect = effect;
+    this._effect = effect;
     return this;
   }
 
-  /**
-   * Adds a condition based on the subject.
-   *
-   * @param pred Function that evaluates the subject and returns true if access should be granted
-   * @example
-   * .subjects(user => user.roles.includes('admin'))
-   */
-  subjects(pred: (sub: Sub) => boolean | Promise<boolean>) {
+  subjects(pred: (sub: Sub) => Effect.Effect<boolean>) {
     this.subjectPred = pred;
     return this;
   }
 
-  /**
-   * Adds a condition based on the resource.
-   *
-   * @param pred Function that evaluates the resource and returns true if access should be granted
-   * @example
-   * .resources(doc => doc.isPublic)
-   */
-  resources(pred: (res: Res) => boolean | Promise<boolean>) {
+  resources(pred: (res: Res) => Effect.Effect<boolean>) {
     this.resPred = pred;
     return this;
   }
 
-  /**
-   * Adds a condition based on the action.
-   *
-   * @param pred Function that evaluates the action and returns true if access should be granted
-   * @example
-   * .actions(action => action === "read" || action === "list")
-   */
-  actions(pred: (action: Act) => boolean | Promise<boolean>) {
+  actions(pred: (action: Act) => Effect.Effect<boolean>) {
     this.actionPred = pred;
     return this;
   }
 
-  /**
-   * Adds a condition based on the context.
-   *
-   * @param pred Function that evaluates the context and returns true if access should be granted
-   * @example
-   * .context(ctx => ctx.isBusinessHours)
-   */
-  context(pred: (ctx: Ctx) => boolean | Promise<boolean>) {
+  context(pred: (ctx: Ctx) => Effect.Effect<boolean>) {
     this.ctxPred = pred;
     return this;
   }
 
-  /**
-   * Adds a custom condition that can access all parameters.
-   *
-   * @param pred Function that evaluates all parameters and returns true if access should be granted
-   * @example
-   * .when(({subject, resource}) => subject.id === resource.ownerId)
-   */
   when(pred: Condition<Sub, Res, Act, Ctx>) {
     this.extraConditionPred = pred;
     return this;
   }
 
-  /**
-   * Builds and returns the policy.
-   *
-   * @returns The constructed policy
-   */
   build(): Policy<Sub, Res, Act, Ctx> {
     const {
       subjectPred,
       resPred,
       actionPred,
       ctxPred,
-      name,
-      internalEffect: effect,
+      _name: name,
+      _effect: effect,
       extraConditionPred,
     } = this;
 
-    const combinedPredicate = async (
+    const combinedPredicate = (
       subject: Sub,
       resource: Res,
       action: Act,
       context: Ctx
-    ): Promise<boolean> => {
-      return (
-        (subjectPred === null || (await subjectPred(subject))) &&
-        (resPred === null || (await resPred(resource))) &&
-        (actionPred === null || (await actionPred(action))) &&
-        (ctxPred === null || (await ctxPred(context))) &&
-        (extraConditionPred === null ||
-          (await extraConditionPred({ subject, resource, action, context })))
-      );
-    };
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        return (
+          (subjectPred === null || (yield* subjectPred(subject))) &&
+          (resPred === null || (yield* resPred(resource))) &&
+          (actionPred === null || (yield* actionPred(action))) &&
+          (ctxPred === null || (yield* ctxPred(context))) &&
+          (extraConditionPred === null ||
+            (yield* extraConditionPred({ subject, resource, action, context })))
+        );
+      });
 
-    const internalPolicy = {
+    return transformInternalPolicy({
       name,
       effect,
       predicate: combinedPredicate,
-    };
-
-    return transformInternalPolicy(internalPolicy);
+    });
   }
 }
 
-/**
- * Interface for role-based access control policies.
- *
- * @template Subject - The subject type
- * @template Resource - The resource type
- * @template Action - The action type
- * @template Context - The context type
- * @template Role - The role type (typically string)
- */
+// ---- RBAC ----
+
 interface RoleBasedPolicy<Subject, Resource, Action, Context, Role>
   extends Policy<Subject, Resource, Action, Context> {
-  requiredRolesResolver: (res: Resource, act: Action) => Role[] | Promise<Role[]>;
-  userRolesResolver: (subject: Subject) => Role[] | Promise<Role[]>;
+  requiredRolesResolver: (res: Resource, act: Action) => Effect.Effect<Role[]>;
+  userRolesResolver: (subject: Subject) => Effect.Effect<Role[]>;
   name: string;
 }
 
 /**
  * Creates a Role-Based Access Control policy.
- * Grants access when the subject has at least one of the required roles for the resource/action.
- *
- * @template Sub - Subject type (typically a user)
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @template Role - Role type (typically string)
- * @param requiredRolesResolver Function that returns the roles required for a resource/action
- * @param userRolesResolver Function that extracts the roles from a subject
- * @returns A RBAC policy
- *
- * @example
- * const rbacPolicy = buildRbacPolicy<User, Document, string, Context, string>({
- *   requiredRolesResolver: (doc, action) =>
- *     action === "read" ? ["user", "admin"] : ["admin"],
- *   userRolesResolver: (user) => user.roles
- * });
+ * Resolvers now return Effect<Role[]> instead of Role[] | Promise<Role[]>.
  */
-function buildRbacPolicy<Sub, Res, Act, Ctx, Role>(
-  {
-    requiredRolesResolver,
-    userRolesResolver,
-    name = 'RbacPolicy',
-  }: {
-    requiredRolesResolver: (res: Res, act: Act) => Role[] | Promise<Role[]>;
-    userRolesResolver: (sub: Sub) => Role[] | Promise<Role[]>;
-    name?: string;
-  }
-): RoleBasedPolicy<Sub, Res, Act, Ctx, Role> {
+function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
+  requiredRolesResolver,
+  userRolesResolver,
+  name = 'RbacPolicy',
+}: {
+  requiredRolesResolver: (res: Res, act: Act) => Effect.Effect<Role[]>;
+  userRolesResolver: (sub: Sub) => Effect.Effect<Role[]>;
+  name?: string;
+}): RoleBasedPolicy<Sub, Res, Act, Ctx, Role> {
   const policyType = name;
-  const evaluateAccess = async ({
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = ({
     subject,
     resource,
     action,
-  }: {
-    subject: Sub;
-    resource: Res;
-    action: Act;
-    context: Ctx;
-  }): Promise<PolicyEvalResult> => {
-    const requiredRoles: Role[] = await requiredRolesResolver(resource, action);
-    const userRoles: Role[] = await userRolesResolver(subject);
-    const hasRole: boolean = requiredRoles.some((role) => userRoles.includes(role));
-    if (hasRole) {
-      return new GrantedAccessResult({
+  }) =>
+    Effect.gen(function* () {
+      const requiredRoles: Role[] = yield* requiredRolesResolver(resource, action);
+      const userRoles: Role[] = yield* userRolesResolver(subject);
+      const hasRole: boolean = requiredRoles.some((role) => userRoles.includes(role));
+      if (hasRole) {
+        return new GrantedAccessResult({
+          policyType: name,
+          reason: 'User has required role',
+        });
+      }
+      return new DeniedAccessResult({
         policyType: name,
-        reason: 'User has required role',
+        reason: "User doesn't have required role",
       });
-    }
-
-    return new DeniedAccessResult({
-      policyType: name,
-      reason: "User doesn't have required role",
     });
-  };
 
   return Object.freeze({
     name: policyType,
@@ -669,14 +522,8 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>(
   });
 }
 
-/**
- * Interface for attribute-based access control policies.
- *
- * @template Subject - The subject type
- * @template Resource - The resource type
- * @template Action - The action type
- * @template Context - The context type
- */
+// ---- ABAC ----
+
 interface AttributeBasedPolicy<Subject, Resource, Action, Context>
   extends Policy<Subject, Resource, Action, Context> {
   condition: Condition<Subject, Resource, Action, Context>;
@@ -684,86 +531,48 @@ interface AttributeBasedPolicy<Subject, Resource, Action, Context>
 
 /**
  * Creates an Attribute-Based Access Control policy.
- * Grants access based on attributes of the subject, resource, action, and context.
- *
- * @template Sub - Subject type
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @param condition Function that evaluates attributes and returns true if access should be granted
- * @returns An ABAC policy
- *
- * @example
- * const abacPolicy = buildAbacPolicy<User, Document, string, Context>(
- *   ({subject, resource}) =>
- *     resource.isPublic || subject.id === resource.ownerId
- * );
+ * Condition now returns Effect<boolean> instead of boolean | Promise<boolean>.
  */
-function buildAbacPolicy<Sub, Res, Act, Ctx>(
-  {
-    condition,
-    name = 'AbacPolicy',
-  }: {
-    condition: Condition<Sub, Res, Act, Ctx>;
-    name?: string;
-  }
-): AttributeBasedPolicy<Sub, Res, Act, Ctx> {
+function buildAbacPolicy<Sub, Res, Act, Ctx>({
+  condition,
+  name = 'AbacPolicy',
+}: {
+  condition: Condition<Sub, Res, Act, Ctx>;
+  name?: string;
+}): AttributeBasedPolicy<Sub, Res, Act, Ctx> {
   const policyType = name;
-  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = async ({
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = ({
     subject,
     resource,
     action,
     context,
-  }): Promise<PolicyEvalResult> => {
-    const conditionMet: boolean = await condition({
-      subject,
-      resource,
-      action,
-      context,
-    });
-
-    if (conditionMet) {
-      return new GrantedAccessResult({
-        policyType,
-        reason: 'Condition evaluated to true',
+  }) =>
+    Effect.gen(function* () {
+      const conditionMet: boolean = yield* condition({
+        subject,
+        resource,
+        action,
+        context,
       });
-    }
-
-    return new DeniedAccessResult({
-      policyType,
-      reason: 'Condition evaluated to false',
+      if (conditionMet) {
+        return new GrantedAccessResult({
+          policyType,
+          reason: 'Condition evaluated to true',
+        });
+      }
+      return new DeniedAccessResult({
+        policyType,
+        reason: 'Condition evaluated to false',
+      });
     });
-  };
 
   return Object.freeze({ name: policyType, evaluateAccess, condition });
 }
 
-/**
- * Function type for resolving relationships between subjects and resources.
- * Used in ReBAC policies to determine if a subject has a specific relationship with a resource.
- *
- * @template Subject - The subject type
- * @template Resource - The resource type
- */
-type RelationshipResolver<Subject, Resource> = ({
-  subject,
-  resource,
-  relationship,
-}: {
-  subject: Subject;
-  resource: Resource;
-  relationship: string;
-}) => boolean | Promise<boolean>;
+// ---- ReBAC ----
 
-/**
- * Interface for relationship-based access control policies.
- *
- * @template Sub - The subject type
- * @template Res - The resource type
- * @template Act - The action type
- * @template Ctx - The context type
- */
-interface RelationshipBasedPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
+interface RelationshipBasedPolicy<Sub, Res, Act, Ctx>
+  extends Policy<Sub, Res, Act, Ctx> {
   readonly relationship: string;
   readonly resolver: RelationshipResolver<Sub, Res>;
   name: string;
@@ -771,21 +580,7 @@ interface RelationshipBasedPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, A
 
 /**
  * Creates a Relationship-Based Access Control policy.
- * Grants access based on the relationship between subject and resource.
- *
- * @template Sub - Subject type
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @param relationship Name of the relationship (e.g., "owner", "parent", "member")
- * @param resolver Function that checks if the relationship exists
- * @returns A ReBAC policy
- *
- * @example
- * const ownerPolicy = buildRebacPolicy<User, Document, string, Context>({
- *   relationship: "owner",
- *   resolver: ({subject, resource}) => subject.id === resource.ownerId
- * });
+ * Resolver now returns Effect<boolean> instead of boolean | Promise<boolean>.
  */
 function buildRebacPolicy<Sub, Res, Act, Ctx>({
   relationship,
@@ -797,28 +592,27 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
   name?: string;
 }): RelationshipBasedPolicy<Sub, Res, Act, Ctx> {
   const policyType = name;
-  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = async ({
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = ({
     subject,
     resource,
-  }): Promise<PolicyEvalResult> => {
-    const hasRelationship: boolean = await resolver({
-      subject,
-      resource,
-      relationship,
-    });
-
-    if (hasRelationship) {
-      return new GrantedAccessResult({
-        policyType,
-        reason: `Subject has ${relationship} relationship with resource`,
+  }) =>
+    Effect.gen(function* () {
+      const hasRelationship: boolean = yield* resolver({
+        subject,
+        resource,
+        relationship,
       });
-    }
-
-    return new DeniedAccessResult({
-      policyType,
-      reason: `Subject does not have ${relationship} relationship with resource`,
+      if (hasRelationship) {
+        return new GrantedAccessResult({
+          policyType,
+          reason: `Subject has ${relationship} relationship with resource`,
+        });
+      }
+      return new DeniedAccessResult({
+        policyType,
+        reason: `Subject does not have ${relationship} relationship with resource`,
+      });
     });
-  };
 
   return Object.freeze({
     name: policyType,
@@ -828,15 +622,8 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
   });
 }
 
-/**
- * Interface for AND combination policies.
- * Requires all child policies to grant access.
- *
- * @template Sub - The subject type
- * @template Res - The resource type
- * @template Act - The action type
- * @template Ctx - The context type
- */
+// ---- AND Policy ----
+
 interface AndPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
   readonly policies: Policy<Sub, Res, Act, Ctx>[];
   name: string;
@@ -844,64 +631,44 @@ interface AndPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
 
 /**
  * Creates a policy that requires all sub-policies to grant access.
- *
- * @template Sub - Subject type
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @param policies Array of policies that all must grant access
- * @returns A combined AND policy
- *
- * @example
- * const policy = buildAndPolicy([adminRolePolicy, documentOwnerPolicy]);
  */
-function buildAndPolicy<Sub, Res, Act, Ctx>(
-  {
-    policies,
-    name = 'AndPolicy',
-  }: {
-    policies: Policy<Sub, Res, Act, Ctx>[];
-    name?: string;
-  }
-): AndPolicy<Sub, Res, Act, Ctx> {
+function buildAndPolicy<Sub, Res, Act, Ctx>({
+  policies,
+  name = 'AndPolicy',
+}: {
+  policies: Policy<Sub, Res, Act, Ctx>[];
+  name?: string;
+}): AndPolicy<Sub, Res, Act, Ctx> {
   if (!policies.length) {
     throw new Error('AndPolicy must have at least one policy');
   }
 
   const policyType = name;
-  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = async ({
-    subject,
-    resource,
-    action,
-    context,
-  }): Promise<PolicyEvalResult> => {
-    const results: PolicyEvalResult[] = [];
-    for (const policy of policies) {
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action,
-        context,
-      });
-      results.push(result);
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = (args) =>
+    Effect.gen(function* () {
+      const results: PolicyEvalResult[] = [];
+      for (const policy of policies) {
+        const result = yield* policy.evaluateAccess(args);
+        results.push(result);
 
-      if (!result.isGranted()) {
-        return new CombinedResult({
-          policyType,
-          outcome: false,
-          operation: CombineOp.And,
-          children: results,
-        });
+        if (!result.isGranted()) {
+          return new CombinedResult({
+            policyType,
+            reason: null,
+            outcome: false,
+            operation: CombineOp.And,
+            children: results,
+          });
+        }
       }
-    }
-
-    return new CombinedResult({
-      policyType,
-      outcome: true,
-      operation: CombineOp.And,
-      children: results,
+      return new CombinedResult({
+        policyType,
+        reason: null,
+        outcome: true,
+        operation: CombineOp.And,
+        children: results,
+      });
     });
-  };
 
   return Object.freeze({
     name: policyType,
@@ -910,15 +677,8 @@ function buildAndPolicy<Sub, Res, Act, Ctx>(
   });
 }
 
-/**
- * Interface for OR combination policies.
- * Requires any child policy to grant access.
- *
- * @template Sub - The subject type
- * @template Res - The resource type
- * @template Act - The action type
- * @template Ctx - The context type
- */
+// ---- OR Policy ----
+
 interface OrPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
   readonly policies: Policy<Sub, Res, Act, Ctx>[];
   name: string;
@@ -926,64 +686,44 @@ interface OrPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
 
 /**
  * Creates a policy that grants access if any sub-policy grants access.
- *
- * @template Sub - Subject type
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @param policies Array of policies where any one can grant access
- * @returns A combined OR policy
- *
- * @example
- * const policy = buildOrPolicy([adminRolePolicy, documentOwnerPolicy]);
  */
-function buildOrPolicy<Sub, Res, Act, Ctx>(
-  {
-    policies,
-    name = 'OrPolicy',
-  }: {
-    policies: Policy<Sub, Res, Act, Ctx>[];
-    name?: string;
-  }
-): OrPolicy<Sub, Res, Act, Ctx> {
+function buildOrPolicy<Sub, Res, Act, Ctx>({
+  policies,
+  name = 'OrPolicy',
+}: {
+  policies: Policy<Sub, Res, Act, Ctx>[];
+  name?: string;
+}): OrPolicy<Sub, Res, Act, Ctx> {
   if (!policies.length) {
     throw new Error('OrPolicy must have at least one policy');
   }
 
   const policyType = name;
-  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = async ({
-    subject,
-    resource,
-    action,
-    context,
-  }): Promise<PolicyEvalResult> => {
-    const results: PolicyEvalResult[] = [];
-    for (const policy of policies) {
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action,
-        context,
-      });
-      results.push(result);
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = (args) =>
+    Effect.gen(function* () {
+      const results: PolicyEvalResult[] = [];
+      for (const policy of policies) {
+        const result = yield* policy.evaluateAccess(args);
+        results.push(result);
 
-      if (result.isGranted()) {
-        return new CombinedResult({
-          policyType,
-          outcome: true,
-          operation: CombineOp.Or,
-          children: results,
-        });
+        if (result.isGranted()) {
+          return new CombinedResult({
+            policyType,
+            reason: null,
+            outcome: true,
+            operation: CombineOp.Or,
+            children: results,
+          });
+        }
       }
-    }
-
-    return new CombinedResult({
-      policyType,
-      outcome: false,
-      operation: CombineOp.Or,
-      children: results,
+      return new CombinedResult({
+        policyType,
+        reason: null,
+        outcome: false,
+        operation: CombineOp.Or,
+        children: results,
+      });
     });
-  };
 
   return Object.freeze({
     name: policyType,
@@ -992,14 +732,8 @@ function buildOrPolicy<Sub, Res, Act, Ctx>(
   });
 }
 
-/**
- * Interface for NOT policies that invert another policy's result.
- *
- * @template Sub - The subject type
- * @template Res - The resource type
- * @template Act - The action type
- * @template Ctx - The context type
- */
+// ---- NOT Policy ----
+
 interface NotPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
   readonly policy: Policy<Sub, Res, Act, Ctx>;
   name: string;
@@ -1007,48 +741,26 @@ interface NotPolicy<Sub, Res, Act, Ctx> extends Policy<Sub, Res, Act, Ctx> {
 
 /**
  * Creates a policy that inverts the result of another policy.
- *
- * @template Sub - Subject type
- * @template Res - Resource type
- * @template Act - Action type
- * @template Ctx - Context type
- * @param policy The policy to invert
- * @returns A NOT policy that grants access when the original would deny it
- *
- * @example
- * // Grant access to non-public resources
- * const policy = buildNotPolicy(publicResourcePolicy);
  */
-function buildNotPolicy<Sub, Res, Act, Ctx>(
-  {
-    policy,
-    name = 'NotPolicy',
-  }: {
-    policy: Policy<Sub, Res, Act, Ctx>;
-    name?: string;
-  }
-): NotPolicy<Sub, Res, Act, Ctx> {
+function buildNotPolicy<Sub, Res, Act, Ctx>({
+  policy,
+  name = 'NotPolicy',
+}: {
+  policy: Policy<Sub, Res, Act, Ctx>;
+  name?: string;
+}): NotPolicy<Sub, Res, Act, Ctx> {
   const policyType = name;
-  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = async ({
-    subject,
-    resource,
-    action,
-    context,
-  }): Promise<PolicyEvalResult> => {
-    const result = await policy.evaluateAccess({
-      subject,
-      resource,
-      action,
-      context,
+  const evaluateAccess: EvaluateAccess<Sub, Res, Act, Ctx> = (args) =>
+    Effect.gen(function* () {
+      const result = yield* policy.evaluateAccess(args);
+      return new CombinedResult({
+        policyType,
+        reason: null,
+        outcome: !result.isGranted(),
+        operation: CombineOp.Not,
+        children: [result],
+      });
     });
-
-    return new CombinedResult({
-      policyType,
-      outcome: !result.isGranted(),
-      operation: CombineOp.Not,
-      children: [result],
-    });
-  };
 
   return Object.freeze({
     name: policyType,
@@ -1058,6 +770,8 @@ function buildNotPolicy<Sub, Res, Act, Ctx>(
 }
 
 export {
+  AccessDenied,
+  AccessGranted,
   buildAbacPolicy,
   buildAndPolicy,
   buildNotPolicy,
@@ -1065,11 +779,14 @@ export {
   buildRbacPolicy,
   buildRebacPolicy,
   CombineOp,
-  Effect,
+  type Condition,
   type EvaluateAccess,
   type IntendedEffect,
+  NoPoliciesError,
   PermissionChecker,
-  PolicyBuilder,
   type Policy,
+  PolicyBuilder,
+  PolicyEffect,
   type PolicyEvalResult,
+  type RelationshipResolver,
 };

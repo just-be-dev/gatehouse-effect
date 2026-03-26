@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import { Effect } from "effect";
 import {
   buildAndPolicy,
   buildNotPolicy,
@@ -8,7 +9,7 @@ import {
   PolicyBuilder,
   type Policy,
   type PolicyEvalResult,
-  Effect,
+  PolicyEffect,
 } from "../src/gatehouse";
 
 type TestSubject = {
@@ -35,12 +36,13 @@ const alwaysAllowPolicy: Policy<
   TestContext
 > = {
   name: "AlwaysAllowPolicy",
-  evaluateAccess: async (): Promise<PolicyEvalResult> => ({
-    policyType: "AlwaysAllowPolicy",
-    reason: "Always allow policy",
-    isGranted: () => true,
-    format: () => "✔ AlwaysAllowPolicy GRANTED Always allow policy",
-  }),
+  evaluateAccess: () =>
+    Effect.succeed({
+      policyType: "AlwaysAllowPolicy",
+      reason: "Always allow policy",
+      isGranted: () => true,
+      format: () => "\u2714 AlwaysAllowPolicy GRANTED Always allow policy",
+    }),
 };
 
 // AlwaysDenyPolicy
@@ -50,12 +52,13 @@ function buildAlwaysDenyPolicy(
   const name = "AlwaysDenyPolicy";
   return {
     name,
-    evaluateAccess: async (): Promise<PolicyEvalResult> => ({
-      policyType: name,
-      reason: reason,
-      isGranted: () => false,
-      format: () => `✘ ${name} DENIED: ${reason}`,
-    }),
+    evaluateAccess: () =>
+      Effect.succeed({
+        policyType: name,
+        reason: reason,
+        isGranted: () => false,
+        format: () => `\u2718 ${name} DENIED: ${reason}`,
+      }),
   };
 }
 
@@ -73,7 +76,7 @@ class DummyRelationshipResolver {
     this.relationships = relationships;
   }
 
-  async hasRelationship({
+  hasRelationship({
     subject,
     resource,
     relationship,
@@ -81,10 +84,12 @@ class DummyRelationshipResolver {
     subject: TestSubject;
     resource: TestResource;
     relationship: string;
-  }): Promise<boolean> {
-    return this.relationships.some(
-      ([sId, rId, rel]) =>
-        sId === subject.id && rId === resource.id && rel === relationship
+  }): Effect.Effect<boolean> {
+    return Effect.succeed(
+      this.relationships.some(
+        ([sId, rId, rel]) =>
+          sId === subject.id && rId === resource.id && rel === relationship
+      )
     );
   }
 }
@@ -106,12 +111,16 @@ describe("Original Test Suite", () => {
   });
 
   test("No Policies", async () => {
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action: testAction,
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      checker
+        .evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+        .pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
 
     expect(result.isGranted()).toBe(false);
 
@@ -121,68 +130,77 @@ describe("Original Test Suite", () => {
 
   test("One Policy Allow", async () => {
     checker.addPolicy(alwaysAllowPolicy);
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action: testAction,
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      checker
+        .evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+        .pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
 
     expect(result.isGranted()).toBe(true);
-    // Check specific grant reason/policy type if AccessEvaluation exposes it directly
-    // If not, check trace as in Rust test
     const traceStr = result.getDisplayTrace();
     expect(traceStr).toContain("AlwaysAllowPolicy");
-    // Optional: Check specific reason if available on AccessEvaluation
-    // expect(result.reason).toBe("Always allow policy"); // Depends on AccessEvaluation structure
   });
 
   test("One Policy Deny", async () => {
     const denyReason = "DeniedByPolicy";
     checker.addPolicy(buildAlwaysDenyPolicy(denyReason));
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action: testAction,
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      checker
+        .evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+        .pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
 
     expect(result.isGranted()).toBe(false);
     const traceStr = result.getDisplayTrace();
-    expect(traceStr).toContain("AlwaysDenyPolicy"); // Checker's summary reason
-    expect(traceStr).toContain(denyReason); // Inner policy's reason in trace
+    expect(traceStr).toContain("AlwaysDenyPolicy");
+    expect(traceStr).toContain(denyReason);
   });
 
   test("Multiple Policies Or Success", async () => {
     checker.addPolicy(buildAlwaysDenyPolicy("DenyPolicy"));
     checker.addPolicy(alwaysAllowPolicy);
 
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action: testAction,
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      checker
+        .evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+        .pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
 
     expect(result.isGranted()).toBe(true);
-    // Check that the granting policy was AlwaysAllowPolicy (if exposed)
-    // const grantingPolicy = result.policyType; // hypothetical
-    // expect(grantingPolicy).toBe("AlwaysAllowPolicy");
     const traceStr = result.getDisplayTrace();
-    expect(traceStr).toContain("AlwaysAllowPolicy"); // Granting policy
-    expect(traceStr).toContain("DenyPolicy"); // Also includes the denied one
+    expect(traceStr).toContain("AlwaysAllowPolicy");
+    expect(traceStr).toContain("DenyPolicy");
   });
 
   test("Multiple Policies All Deny Collect Reasons", async () => {
     checker.addPolicy(buildAlwaysDenyPolicy("DenyPolicy1"));
     checker.addPolicy(buildAlwaysDenyPolicy("DenyPolicy2"));
 
-    const result = await checker.evaluateAccess({
-      subject,
-      resource,
-      action: testAction,
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      checker
+        .evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+        .pipe(Effect.catch((e) => Effect.succeed(e)))
+    );
 
     expect(result.isGranted()).toBe(false);
     const traceStr = result.getDisplayTrace();
@@ -215,12 +233,14 @@ describe("Original Test Suite", () => {
           resolver.hasRelationship({ subject, resource, relationship }),
       });
 
-      const result = await policy.evaluateAccess({
-        subject: currentSubject,
-        resource: currentResource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject: currentSubject,
+          resource: currentResource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(true);
     });
 
@@ -244,12 +264,14 @@ describe("Original Test Suite", () => {
           resolver.hasRelationship({ subject, resource, relationship }),
       });
 
-      const result = await policy.evaluateAccess({
-        subject: currentSubject,
-        resource: currentResource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject: currentSubject,
+          resource: currentResource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(false);
     });
   });
@@ -260,12 +282,14 @@ describe("Original Test Suite", () => {
       const policy = buildAndPolicy({
         policies: [alwaysAllowPolicy, alwaysAllowPolicy],
       });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(true);
     });
 
@@ -274,12 +298,14 @@ describe("Original Test Suite", () => {
       const policy = buildAndPolicy({
         policies: [alwaysAllowPolicy, buildAlwaysDenyPolicy(denyReason)],
       });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(false);
       const traceStr = result.format();
       expect(traceStr).toContain("AndPolicy");
@@ -290,12 +316,14 @@ describe("Original Test Suite", () => {
       const policy = buildOrPolicy({
         policies: [buildAlwaysDenyPolicy("Deny1"), alwaysAllowPolicy],
       });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(true);
     });
 
@@ -306,12 +334,14 @@ describe("Original Test Suite", () => {
           buildAlwaysDenyPolicy("Deny2"),
         ],
       });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(false);
       const traceStr = result.format();
       expect(traceStr).toContain("OrPolicy");
@@ -323,23 +353,27 @@ describe("Original Test Suite", () => {
       const policy = buildNotPolicy({
         policy: buildAlwaysDenyPolicy("AlwaysDeny"),
       });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(true);
     });
 
     test("Not Policy Denies When Inner Allows", async () => {
       const policy = buildNotPolicy({ policy: alwaysAllowPolicy });
-      const result = await policy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        policy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(result.isGranted()).toBe(false);
       const traceStr = result.format();
       expect(traceStr).toContain("NotPolicy");
@@ -379,12 +413,14 @@ describe("Original Test Suite", () => {
 
       const outerNot = buildNotPolicy({ policy: innerAnd });
 
-      const result = await outerNot.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      const result = await Effect.runPromise(
+        outerNot.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
 
       expect(result.isGranted()).toBe(false);
 
@@ -413,42 +449,48 @@ describe("Original Test Suite", () => {
       FeatureFlagContext
     > = {
       name: "FeatureFlagPolicy",
-      evaluateAccess: async ({ context }): Promise<PolicyEvalResult> => {
+      evaluateAccess: ({ context }) => {
         if (context.featureEnabled) {
-          return {
+          return Effect.succeed({
             policyType: "FeatureFlagPolicy",
             reason: "Feature flag enabled",
             isGranted: () => true,
-            format: () => "✔ FeatureFlagPolicy GRANTED Feature flag enabled",
-          };
+            format: () =>
+              "\u2714 FeatureFlagPolicy GRANTED Feature flag enabled",
+          });
         } else {
-          return {
+          return Effect.succeed({
             policyType: "FeatureFlagPolicy",
             reason: "Feature flag disabled",
             isGranted: () => false,
-            format: () => "✘ FeatureFlagPolicy DENIED: Feature flag disabled",
-          };
+            format: () =>
+              "\u2718 FeatureFlagPolicy DENIED: Feature flag disabled",
+          });
         }
       },
     };
 
     test("Context Sensitive Policy", async () => {
       const contextEnabled: FeatureFlagContext = { featureEnabled: true };
-      let result = await featureFlagPolicy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: contextEnabled,
-      });
+      let result = await Effect.runPromise(
+        featureFlagPolicy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: contextEnabled,
+        })
+      );
       expect(result.isGranted()).toBe(true);
 
       const contextDisabled: FeatureFlagContext = { featureEnabled: false };
-      result = await featureFlagPolicy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: contextDisabled,
-      });
+      result = await Effect.runPromise(
+        featureFlagPolicy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: contextDisabled,
+        })
+      );
       expect(result.isGranted()).toBe(false);
     });
   });
@@ -462,24 +504,25 @@ describe("Original Test Suite", () => {
       const name = `CountingPolicy(${resultToReturn ? "Allow" : "Deny"})`;
       return {
         name: name,
-        evaluateAccess: async (): Promise<PolicyEvalResult> => {
-          evaluationCount++;
-          if (resultToReturn) {
-            return {
-              policyType: name,
-              reason: "Counting policy granted",
-              isGranted: () => true,
-              format: () => `✔ ${name} GRANTED Counting policy granted`,
-            };
-          } else {
-            return {
-              policyType: name,
-              reason: "Counting policy denied",
-              isGranted: () => false,
-              format: () => `✘ ${name} DENIED: Counting policy denied`,
-            };
-          }
-        },
+        evaluateAccess: () =>
+          Effect.sync(() => {
+            evaluationCount++;
+            if (resultToReturn) {
+              return {
+                policyType: name,
+                reason: "Counting policy granted",
+                isGranted: () => true,
+                format: () => `\u2714 ${name} GRANTED Counting policy granted`,
+              };
+            } else {
+              return {
+                policyType: name,
+                reason: "Counting policy denied",
+                isGranted: () => false,
+                format: () => `\u2718 ${name} DENIED: Counting policy denied`,
+              };
+            }
+          }),
       };
     }
 
@@ -494,12 +537,14 @@ describe("Original Test Suite", () => {
           buildCountingPolicy(true), // Allows, should not be evaluated
         ],
       });
-      await andPolicy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      await Effect.runPromise(
+        andPolicy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(evaluationCount).toBe(1);
     });
 
@@ -510,12 +555,14 @@ describe("Original Test Suite", () => {
           buildCountingPolicy(false), // Denies, should not be evaluated
         ],
       });
-      await orPolicy.evaluateAccess({
-        subject,
-        resource,
-        action: testAction,
-        context: testContext,
-      });
+      await Effect.runPromise(
+        orPolicy.evaluateAccess({
+          subject,
+          resource,
+          action: testAction,
+          context: testContext,
+        })
+      );
       expect(evaluationCount).toBe(1);
     });
   });
@@ -541,12 +588,14 @@ describe("PolicyBuilder", () => {
       BuilderContext
     >("NoPredicatesPolicy").build();
 
-    const result = await policy.evaluateAccess({
-      subject: builderSubjectAny,
-      action: testAction,
-      resource: { id: newId() },
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: builderSubjectAny,
+        action: testAction,
+        resource: { id: newId() },
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(true);
   });
 
@@ -557,25 +606,29 @@ describe("PolicyBuilder", () => {
       BuilderAction,
       BuilderContext
     >("SubjectPolicy")
-      .subjects((s: BuilderSubject) => s.name === "Alice")
+      .subjects((s: BuilderSubject) => Effect.succeed(s.name === "Alice"))
       .build();
 
     // Should allow if the subject's name is "Alice"
-    let result = await policy.evaluateAccess({
-      subject: builderSubjectAlice,
-      action: testAction,
-      resource: { id: newId() },
-      context: testContext,
-    });
+    let result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: builderSubjectAlice,
+        action: testAction,
+        resource: { id: newId() },
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(true);
 
     // Otherwise, it should deny
-    result = await policy.evaluateAccess({
-      subject: builderSubjectBob,
-      action: testAction,
-      resource: { id: newId() },
-      context: testContext,
-    });
+    result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: builderSubjectBob,
+        action: testAction,
+        resource: { id: newId() },
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 
@@ -586,17 +639,19 @@ describe("PolicyBuilder", () => {
       BuilderAction,
       BuilderContext
     >("DenyPolicy")
-      .effect(Effect.Deny) // Use the imported Effect enum/object
+      .effect(PolicyEffect.Deny)
       .build();
 
     // Even though no predicate fails (so predicate returns true),
     // the effect should result in a Denied outcome.
-    const result = await policy.evaluateAccess({
-      subject: builderSubjectAny,
-      action: testAction,
-      resource: { id: newId() },
-      context: testContext,
-    });
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: builderSubjectAny,
+        action: testAction,
+        resource: { id: newId() },
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 
@@ -612,7 +667,10 @@ describe("PolicyBuilder", () => {
     type ExtendedContext = TestContext;
 
     const subjectId = newId();
-    const aliceOwnerSubject: ExtendedSubject = { id: subjectId, name: "Alice" };
+    const aliceOwnerSubject: ExtendedSubject = {
+      id: subjectId,
+      name: "Alice",
+    };
     const resourceOwnedByAlice: ExtendedResource = { ownerId: subjectId };
     const resourceOwnedByOther: ExtendedResource = { ownerId: newId() };
 
@@ -625,35 +683,43 @@ describe("PolicyBuilder", () => {
       ExtendedAction,
       ExtendedContext
     >("AliceOwnerPolicy")
-      .subjects((s: ExtendedSubject) => s.name === "Alice")
-      .when(({ subject, resource }) => subject.id === resource.ownerId) // Note: TS uses ownerId
+      .subjects((s: ExtendedSubject) => Effect.succeed(s.name === "Alice"))
+      .when(({ subject, resource }) =>
+        Effect.succeed(subject.id === resource.ownerId)
+      )
       .build();
 
     // Case where both conditions are met.
-    let result = await policy.evaluateAccess({
-      subject: aliceOwnerSubject,
-      action: testAction,
-      resource: resourceOwnedByAlice,
-      context: testContext,
-    });
+    let result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: aliceOwnerSubject,
+        action: testAction,
+        resource: resourceOwnedByAlice,
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(true);
 
     // Case where extra condition fails (different id)
-    result = await policy.evaluateAccess({
-      subject: aliceOwnerSubject, // Still Alice
-      action: testAction,
-      resource: resourceOwnedByOther, // Owned by someone else
-      context: testContext,
-    });
+    result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: aliceOwnerSubject, // Still Alice
+        action: testAction,
+        resource: resourceOwnedByOther, // Owned by someone else
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(false);
 
     // Case where subject condition fails (not Alice)
-    result = await policy.evaluateAccess({
-      subject: { id: subjectId, name: "Bob" }, // Not Alice
-      action: testAction,
-      resource: resourceOwnedByAlice, // Owned by Alice's ID, but subject is Bob
-      context: testContext,
-    });
+    result = await Effect.runPromise(
+      policy.evaluateAccess({
+        subject: { id: subjectId, name: "Bob" }, // Not Alice
+        action: testAction,
+        resource: resourceOwnedByAlice, // Owned by Alice's ID, but subject is Bob
+        context: testContext,
+      })
+    );
     expect(result.isGranted()).toBe(false);
   });
 });
