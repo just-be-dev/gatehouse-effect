@@ -36,7 +36,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepare": "effect-language-service patch",
-    "docs": "bunx typedoc src/gatehouse.ts"
+    "docs": "bunx typedoc src/gatehouse.ts",
+    "deploy": "bunx @just-be/deploy"
   },
   "devDependencies": {
     "@effect/language-service": "^0.83.1",

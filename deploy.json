@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/@just-be/deploy/schema.json",
+  "rules": [
+    {
+      "subdomain": "gatehouse",
+      "type": "static",
+      "dir": "./docs",
+      "spa": true
+    }
+  ]
+}
