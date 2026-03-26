@@ -1,0 +1,36 @@
+[tools]
+bun = "1.3.11"
+
+[settings]
+experimental = true
+pin = true
+
+[hooks]
+postinstall = "bun install"
+
+[env]
+_.path = "node_modules/.bin"
+
+[tasks.build]
+description = "Build the project"
+run = "tsc"
+
+[tasks.test]
+description = "Run tests"
+run = "bun test"
+
+[tasks.typecheck]
+description = "Type check without emitting"
+run = "tsc --noEmit"
+
+[tasks.prepare]
+description = "Patch effect language service"
+run = "effect-language-service patch"
+
+[tasks.docs]
+description = "Generate documentation"
+run = "bunx typedoc src/gatehouse.ts"
+
+[tasks.deploy]
+description = "Deploy the project"
+run = "bunx @just-be/deploy"
