@@ -32,9 +32,9 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "bun build src/gatehouse.ts --outdir dist --target node && tsc -p tsconfig.build.json",
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc",
     "prepare": "effect-language-service patch",
     "docs": "bunx typedoc src/gatehouse.ts",
     "deploy": "bunx @just-be/deploy"

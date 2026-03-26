@@ -13,7 +13,7 @@ _.path = "node_modules/.bin"
 
 [tasks.build]
 description = "Build the project"
-run = "tsc"
+run = "bun build src/gatehouse.ts --outdir dist --target node && tsc -p tsconfig.build.json"
 
 [tasks.test]
 description = "Run tests"
@@ -22,7 +22,7 @@ run = "bun test"
 [tasks.typecheck]
 alias = ["type-check"]
 description = "Type check without emitting"
-run = "tsc --noEmit"
+run = "tsc"
 
 [tasks.prepare]
 description = "Patch effect language service"

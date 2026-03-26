@@ -7,11 +7,8 @@
     "moduleDetection": "force",
     "verbatimModuleSyntax": true,
 
-    // Output
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "dist",
+    // Type checking only — no emit
+    "noEmit": true,
 
     // Type safety
     "strict": true,
@@ -22,7 +19,6 @@
     "noUncheckedIndexedAccess": true,
 
     // Performance
-    "incremental": true,
     "skipLibCheck": true,
 
     // Effect Language Service
@@ -32,5 +28,5 @@
       }
     ]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
