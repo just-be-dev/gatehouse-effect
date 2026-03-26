@@ -33,14 +33,13 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepare": "effect-language-service patch",
-    "docs": "npx typedoc src/gatehouse.ts --plugin typedoc-material-theme --themeColor '#cb9820'"
+    "docs": "bunx typedoc src/gatehouse.ts"
   },
   "devDependencies": {
     "@effect/language-service": "^0.83.1",
     "@types/bun": "latest",
     "effect-solutions": "^0.5.2",
-    "typedoc": "0.28.2",
-    "typedoc-material-theme": "1.4.0",
+    "typedoc": "^0.28.18",
     "typescript": "^5"
   },
   "dependencies": {

@@ -126,6 +126,11 @@ interface Policy<Subject, Resource, Action, Context> {
 }
 
 /**
+ * A value that is either a plain boolean or an Effect that produces a boolean.
+ */
+type Effectful<T> = T | Effect.Effect<T>;
+
+/**
  * A condition checks if access should be granted.
  */
 type Condition<Subject, Resource, Action, Context> = (args: {
@@ -133,7 +138,7 @@ type Condition<Subject, Resource, Action, Context> = (args: {
   resource: Resource;
   action: Action;
   context: Context;
-}) => Effect.Effect<boolean>;
+}) => Effectful<boolean>;
 
 /**
  * Resolves whether a relationship exists between a subject and resource.
@@ -142,7 +147,10 @@ type RelationshipResolver<Subject, Resource> = (args: {
   subject: Subject;
   resource: Resource;
   relationship: string;
-}) => Effect.Effect<boolean>;
+}) => Effectful<boolean>;
+
+const resolve = <T>(value: Effectful<T>): Effect.Effect<T> =>
+  Effect.isEffect(value) ? value : Effect.succeed(value as T);
 
 // ---- makePolicy ----
 
@@ -154,10 +162,10 @@ function makePolicy<Sub, Res, Act, Ctx>(
   name: string,
   options: {
     intent?: PolicyIntent;
-    subject?: (sub: Sub) => Effect.Effect<boolean>;
-    resource?: (res: Res) => Effect.Effect<boolean>;
-    action?: (act: Act) => Effect.Effect<boolean>;
-    context?: (ctx: Ctx) => Effect.Effect<boolean>;
+    subject?: (sub: Sub) => Effectful<boolean>;
+    resource?: (res: Res) => Effectful<boolean>;
+    action?: (act: Act) => Effectful<boolean>;
+    context?: (ctx: Ctx) => Effectful<boolean>;
     when?: Condition<Sub, Res, Act, Ctx>;
   } = {}
 ): Policy<Sub, Res, Act, Ctx> {
@@ -171,11 +179,11 @@ function makePolicy<Sub, Res, Act, Ctx>(
     context: Ctx;
   }) {
     const predicateResult =
-      (subjectPred === undefined || (yield* subjectPred(args.subject))) &&
-      (resPred === undefined || (yield* resPred(args.resource))) &&
-      (actionPred === undefined || (yield* actionPred(args.action))) &&
-      (ctxPred === undefined || (yield* ctxPred(args.context))) &&
-      (extraPred === undefined || (yield* extraPred(args)));
+      (subjectPred === undefined || (yield* resolve(subjectPred(args.subject)))) &&
+      (resPred === undefined || (yield* resolve(resPred(args.resource)))) &&
+      (actionPred === undefined || (yield* resolve(actionPred(args.action)))) &&
+      (ctxPred === undefined || (yield* resolve(ctxPred(args.context)))) &&
+      (extraPred === undefined || (yield* resolve(extraPred(args))));
 
     if (predicateResult) {
       if (intent === 'allow') {
@@ -273,8 +281,8 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
   userRolesResolver,
   name = 'RbacPolicy',
 }: {
-  requiredRolesResolver: (res: Res, act: Act) => Effect.Effect<Role[]>;
-  userRolesResolver: (sub: Sub) => Effect.Effect<Role[]>;
+  requiredRolesResolver: (res: Res, act: Act) => Effectful<Role[]>;
+  userRolesResolver: (sub: Sub) => Effectful<Role[]>;
   name?: string;
 }): Policy<Sub, Res, Act, Ctx> {
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* ({
@@ -287,8 +295,8 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
     action: Act;
     context: Ctx;
   }) {
-    const requiredRoles: Role[] = yield* requiredRolesResolver(resource, action);
-    const userRoles: Role[] = yield* userRolesResolver(subject);
+    const requiredRoles: Role[] = yield* resolve(requiredRolesResolver(resource, action));
+    const userRoles: Role[] = yield* resolve(userRolesResolver(subject));
     const hasRole: boolean = requiredRoles.some((role) => userRoles.includes(role));
     if (hasRole) {
       return new GrantedAccessResult({ policyType: name, reason: 'User has required role' });
@@ -337,7 +345,7 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
     action: Act;
     context: Ctx;
   }) {
-    const hasRelationship: boolean = yield* resolver({ subject, resource, relationship });
+    const hasRelationship: boolean = yield* resolve(resolver({ subject, resource, relationship }));
     if (hasRelationship) {
       return new GrantedAccessResult({
         policyType: name,
@@ -491,6 +499,7 @@ export {
   CombinedResult,
   type Condition,
   DeniedAccessResult,
+  type Effectful,
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
