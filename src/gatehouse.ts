@@ -205,10 +205,12 @@ function makePolicy<Sub, Res, Act, Ctx>(
  *
  * Succeeds with `AccessGranted` or fails with `AccessDenied | NoPoliciesError`.
  *
- * Use `Effect.merge` to unify both channels for inspection:
+ * Use `Effect.catch` to unify both channels for inspection:
  * ```ts
  * const check = checkPermissions([rbacPolicy, abacPolicy])
- * const result = yield* check({ subject, resource, action, context }).pipe(Effect.merge)
+ * const result = yield* check({ subject, resource, action, context }).pipe(
+ *   Effect.catch((e) => Effect.succeed(e))
+ * )
  * ```
  */
 function checkPermissions<Sub, Res, Act, Ctx>(
@@ -307,20 +309,6 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
   return { name, evaluateAccess };
 }
 
-// ---- ABAC ----
-
-/**
- * Creates an Attribute-Based Access Control policy.
- */
-function buildAbacPolicy<Sub, Res, Act, Ctx>({
-  condition,
-  name = 'AbacPolicy',
-}: {
-  condition: Condition<Sub, Res, Act, Ctx>;
-  name?: string;
-}): Policy<Sub, Res, Act, Ctx> {
-  return makePolicy(name, { when: condition });
-}
 
 // ---- ReBAC ----
 
@@ -365,14 +353,20 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
 
 /**
  * Creates a policy that requires all sub-policies to grant access.
+ *
+ * @example
+ * ```ts
+ * buildAndPolicy([ownerPolicy, privatePolicy])
+ * buildAndPolicy("OwnerAndPrivate", [ownerPolicy, privatePolicy])
+ * ```
  */
-function buildAndPolicy<Sub, Res, Act, Ctx>({
-  policies,
-  name = 'AndPolicy',
-}: {
-  policies: Policy<Sub, Res, Act, Ctx>[];
-  name?: string;
-}): Policy<Sub, Res, Act, Ctx> {
+function buildAndPolicy<Sub, Res, Act, Ctx>(
+  nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
+  maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
+): Policy<Sub, Res, Act, Ctx> {
+  const name = typeof nameOrPolicies === 'string' ? nameOrPolicies : 'AndPolicy';
+  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+
   if (!policies.length) {
     throw new Error('AndPolicy must have at least one policy');
   }
@@ -412,14 +406,20 @@ function buildAndPolicy<Sub, Res, Act, Ctx>({
 
 /**
  * Creates a policy that grants access if any sub-policy grants access.
+ *
+ * @example
+ * ```ts
+ * buildOrPolicy([ownerPolicy, adminPolicy])
+ * buildOrPolicy("OwnerOrAdmin", [ownerPolicy, adminPolicy])
+ * ```
  */
-function buildOrPolicy<Sub, Res, Act, Ctx>({
-  policies,
-  name = 'OrPolicy',
-}: {
-  policies: Policy<Sub, Res, Act, Ctx>[];
-  name?: string;
-}): Policy<Sub, Res, Act, Ctx> {
+function buildOrPolicy<Sub, Res, Act, Ctx>(
+  nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
+  maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
+): Policy<Sub, Res, Act, Ctx> {
+  const name = typeof nameOrPolicies === 'string' ? nameOrPolicies : 'OrPolicy';
+  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+
   if (!policies.length) {
     throw new Error('OrPolicy must have at least one policy');
   }
@@ -459,14 +459,20 @@ function buildOrPolicy<Sub, Res, Act, Ctx>({
 
 /**
  * Creates a policy that inverts the result of another policy.
+ *
+ * @example
+ * ```ts
+ * buildNotPolicy(publicPolicy)
+ * buildNotPolicy("NotPublic", publicPolicy)
+ * ```
  */
-function buildNotPolicy<Sub, Res, Act, Ctx>({
-  policy,
-  name = 'NotPolicy',
-}: {
-  policy: Policy<Sub, Res, Act, Ctx>;
-  name?: string;
-}): Policy<Sub, Res, Act, Ctx> {
+function buildNotPolicy<Sub, Res, Act, Ctx>(
+  nameOrPolicy: string | Policy<Sub, Res, Act, Ctx>,
+  maybePolicy?: Policy<Sub, Res, Act, Ctx>
+): Policy<Sub, Res, Act, Ctx> {
+  const name = typeof nameOrPolicy === 'string' ? nameOrPolicy : 'NotPolicy';
+  const policy = typeof nameOrPolicy === 'string' ? maybePolicy! : nameOrPolicy;
+
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
     resource: Res;
@@ -485,29 +491,128 @@ function buildNotPolicy<Sub, Res, Act, Ctx>({
   return { name, evaluateAccess };
 }
 
+// ---- Policy Factory ----
+
+/**
+ * Creates a typed policy factory from schemas. Types are inferred from the
+ * schemas so no generic parameters are needed on individual policy definitions.
+ *
+ * Actions can be specified as literals (`"read"`), arrays (`["read", "write"]`),
+ * or predicate functions.
+ *
+ * @example
+ * ```ts
+ * const define = policyFactory({
+ *   subject: UserSchema,
+ *   resource: DocumentSchema,
+ *   action: Schema.Literal("read", "write", "delete"),
+ *   context: ContextSchema,
+ * });
+ *
+ * const readOnly = define("ReadOnly", { action: "read" });
+ * const rbac = define.rbac("RBAC", { roles: { read: ["viewer"], write: ["editor"] }, userRoles: (s) => s.roles });
+ * ```
+ */
+function policyFactory<
+  SubjectSchema extends Schema.Top,
+  ResourceSchema extends Schema.Top,
+  ActionSchema extends Schema.Top,
+  ContextSchema extends Schema.Top,
+>(_schemas: {
+  subject: SubjectSchema;
+  resource: ResourceSchema;
+  action: ActionSchema;
+  context: ContextSchema;
+}) {
+  type Sub = Schema.Schema.Type<SubjectSchema>;
+  type Res = Schema.Schema.Type<ResourceSchema>;
+  type Act = Schema.Schema.Type<ActionSchema>;
+  type Ctx = Schema.Schema.Type<ContextSchema>;
+
+  function define(
+    name: string,
+    options: {
+      intent?: PolicyIntent;
+      subject?: (sub: Sub) => Effectful<boolean>;
+      resource?: (res: Res) => Effectful<boolean>;
+      action?: Act | ReadonlyArray<Act> | ((act: Act) => Effectful<boolean>);
+      context?: (ctx: Ctx) => Effectful<boolean>;
+      when?: (args: { subject: Sub; resource: Res; action: Act; context: Ctx }) => Effectful<boolean>;
+    } = {}
+  ): Policy<Sub, Res, Act, Ctx> {
+    let actionPred: ((act: Act) => Effectful<boolean>) | undefined;
+
+    if (options.action !== undefined) {
+      if (typeof options.action === 'function') {
+        actionPred = options.action as (act: Act) => Effectful<boolean>;
+      } else if (Array.isArray(options.action)) {
+        const allowed = options.action as ReadonlyArray<Act>;
+        actionPred = (a: Act) => allowed.includes(a);
+      } else {
+        const expected = options.action as Act;
+        actionPred = (a: Act) => a === expected;
+      }
+    }
+
+    const policyOptions: Parameters<typeof makePolicy<Sub, Res, Act, Ctx>>[1] = {};
+    if (options.intent !== undefined) policyOptions.intent = options.intent;
+    if (options.subject !== undefined) policyOptions.subject = options.subject;
+    if (options.resource !== undefined) policyOptions.resource = options.resource;
+    if (actionPred !== undefined) policyOptions.action = actionPred;
+    if (options.context !== undefined) policyOptions.context = options.context;
+    if (options.when !== undefined) policyOptions.when = options.when;
+
+    return makePolicy<Sub, Res, Act, Ctx>(name, policyOptions);
+  }
+
+  function rbac<Role>(
+    name: string,
+    options: {
+      roles: { [K in Act & string]: ReadonlyArray<Role> };
+      userRoles: (sub: Sub) => Effectful<Role[]>;
+    }
+  ): Policy<Sub, Res, Act, Ctx> {
+    const roleMap = options.roles as Record<string, ReadonlyArray<Role>>;
+    return buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
+      name,
+      requiredRolesResolver: (_res: Res, act: Act) => (roleMap[act as string] ?? []) as Role[],
+      userRolesResolver: options.userRoles,
+    });
+  }
+
+  function rebac(
+    name: string,
+    options: {
+      relationship: string;
+      resolver: (args: { subject: Sub; resource: Res }) => Effectful<boolean>;
+    }
+  ): Policy<Sub, Res, Act, Ctx> {
+    return buildRebacPolicy<Sub, Res, Act, Ctx>({
+      name,
+      relationship: options.relationship,
+      resolver: ({ subject, resource }) => options.resolver({ subject, resource }),
+    });
+  }
+
+  return Object.assign(define, { rbac, rebac });
+}
+
 export {
   AccessDenied,
   AccessGranted,
-  buildAbacPolicy,
   buildAndPolicy,
   buildNotPolicy,
   buildOrPolicy,
-  buildRbacPolicy,
-  buildRebacPolicy,
   checkPermissions,
   type CombineOp,
   CombinedResult,
-  type Condition,
   DeniedAccessResult,
-  type Effectful,
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
   isGranted,
-  makePolicy,
   NoPoliciesError,
   type Policy,
-  type PolicyIntent,
+  policyFactory,
   type PolicyEvalResult,
-  type RelationshipResolver,
 };

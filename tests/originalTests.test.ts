@@ -1,17 +1,16 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
   buildAndPolicy,
   buildNotPolicy,
   buildOrPolicy,
-  buildRebacPolicy,
   checkPermissions,
   DeniedAccessResult,
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
   isGranted,
-  makePolicy,
+  policyFactory,
   type Policy,
   type PolicyEvalResult,
 } from "../src/gatehouse";
@@ -204,6 +203,13 @@ describe("Original Test Suite", () => {
 
   // --- RebacPolicy Tests ---
   describe("ReBAC Policy", () => {
+    const define = policyFactory({
+      subject: Schema.Struct({ id: Schema.String }),
+      resource: Schema.Struct({ id: Schema.String }),
+      action: Schema.Unknown,
+      context: Schema.Unknown,
+    });
+
     test("ReBAC Policy Allows When Relationship Exists", async () => {
       const subjectId = newId();
       const resourceId = newId();
@@ -215,14 +221,9 @@ describe("Original Test Suite", () => {
       const resolver = new DummyRelationshipResolver([
         [subjectId, resourceId, relationship],
       ]);
-      const policy = buildRebacPolicy<
-        TestSubject,
-        TestResource,
-        TestAction,
-        TestContext
-      >({
-        relationship: relationship,
-        resolver: ({ subject, resource, relationship }) =>
+      const policy = define.rebac("RebacPolicy", {
+        relationship,
+        resolver: ({ subject, resource }) =>
           resolver.hasRelationship({ subject, resource, relationship }),
       });
 
@@ -245,15 +246,10 @@ describe("Original Test Suite", () => {
       const currentSubject = { id: subjectId };
       const currentResource = { id: resourceId };
 
-      const resolver = new DummyRelationshipResolver([]); // Empty relationships
-      const policy = buildRebacPolicy<
-        TestSubject,
-        TestResource,
-        TestAction,
-        TestContext
-      >({
+      const resolver = new DummyRelationshipResolver([]);
+      const policy = define.rebac("RebacPolicy", {
         relationship,
-        resolver: ({ subject, resource, relationship }) =>
+        resolver: ({ subject, resource }) =>
           resolver.hasRelationship({ subject, resource, relationship }),
       });
 
@@ -272,9 +268,7 @@ describe("Original Test Suite", () => {
   // --- Combinator Tests ---
   describe("Combinators", () => {
     test("And Policy Allows When All Allow", async () => {
-      const policy = buildAndPolicy({
-        policies: [alwaysAllowPolicy, alwaysAllowPolicy],
-      });
+      const policy = buildAndPolicy([alwaysAllowPolicy, alwaysAllowPolicy]);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -288,9 +282,7 @@ describe("Original Test Suite", () => {
 
     test("And Policy Denies When One Denies", async () => {
       const denyReason = "DenyInAnd";
-      const policy = buildAndPolicy({
-        policies: [alwaysAllowPolicy, buildAlwaysDenyPolicy(denyReason)],
-      });
+      const policy = buildAndPolicy([alwaysAllowPolicy, buildAlwaysDenyPolicy(denyReason)]);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -306,9 +298,7 @@ describe("Original Test Suite", () => {
     });
 
     test("Or Policy Allows When One Allows", async () => {
-      const policy = buildOrPolicy({
-        policies: [buildAlwaysDenyPolicy("Deny1"), alwaysAllowPolicy],
-      });
+      const policy = buildOrPolicy([buildAlwaysDenyPolicy("Deny1"), alwaysAllowPolicy]);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -321,12 +311,10 @@ describe("Original Test Suite", () => {
     });
 
     test("Or Policy Denies When All Deny", async () => {
-      const policy = buildOrPolicy({
-        policies: [
-          buildAlwaysDenyPolicy("Deny1"),
-          buildAlwaysDenyPolicy("Deny2"),
-        ],
-      });
+      const policy = buildOrPolicy([
+        buildAlwaysDenyPolicy("Deny1"),
+        buildAlwaysDenyPolicy("Deny2"),
+      ]);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -343,9 +331,7 @@ describe("Original Test Suite", () => {
     });
 
     test("Not Policy Allows When Inner Denies", async () => {
-      const policy = buildNotPolicy({
-        policy: buildAlwaysDenyPolicy("AlwaysDeny"),
-      });
+      const policy = buildNotPolicy(buildAlwaysDenyPolicy("AlwaysDeny"));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -358,7 +344,7 @@ describe("Original Test Suite", () => {
     });
 
     test("Not Policy Denies When Inner Allows", async () => {
-      const policy = buildNotPolicy({ policy: alwaysAllowPolicy });
+      const policy = buildNotPolicy(alwaysAllowPolicy);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -375,15 +361,11 @@ describe("Original Test Suite", () => {
 
     test("Empty Policies In Combinators", () => {
       expect(() =>
-        buildAndPolicy<TestSubject, TestResource, TestAction, TestContext>({
-          policies: [],
-        })
+        buildAndPolicy<TestSubject, TestResource, TestAction, TestContext>([])
       ).toThrow("AndPolicy must have at least one policy");
 
       expect(() =>
-        buildOrPolicy<TestSubject, TestResource, TestAction, TestContext>({
-          policies: [],
-        })
+        buildOrPolicy<TestSubject, TestResource, TestAction, TestContext>([])
       ).toThrow("OrPolicy must have at least one policy");
     });
 
@@ -393,18 +375,12 @@ describe("Original Test Suite", () => {
             NOT(AND(Allow, OR(Deny, NOT(Deny))))
         */
       const innerDeny = buildAlwaysDenyPolicy("InnerDeny");
-      const innerNot = buildNotPolicy({ policy: innerDeny });
+      const innerNot = buildNotPolicy(innerDeny);
       const midDeny = buildAlwaysDenyPolicy("MidDeny");
 
-      const innerOr = buildOrPolicy({
-        policies: [midDeny, innerNot],
-      });
-
-      const innerAnd = buildAndPolicy({
-        policies: [alwaysAllowPolicy, innerOr],
-      });
-
-      const outerNot = buildNotPolicy({ policy: innerAnd });
+      const innerOr = buildOrPolicy([midDeny, innerNot]);
+      const innerAnd = buildAndPolicy([alwaysAllowPolicy, innerOr]);
+      const outerNot = buildNotPolicy(innerAnd);
 
       const result = await Effect.runPromise(
         outerNot.evaluateAccess({
@@ -518,12 +494,10 @@ describe("Original Test Suite", () => {
     });
 
     test("AND policy should short-circuit after first deny", async () => {
-      const andPolicy = buildAndPolicy({
-        policies: [
-          buildCountingPolicy(false), // Denies, should cause short-circuit
-          buildCountingPolicy(true), // Allows, should not be evaluated
-        ],
-      });
+      const andPolicy = buildAndPolicy([
+        buildCountingPolicy(false), // Denies, should cause short-circuit
+        buildCountingPolicy(true), // Allows, should not be evaluated
+      ]);
       await Effect.runPromise(
         andPolicy.evaluateAccess({
           subject,
@@ -536,12 +510,10 @@ describe("Original Test Suite", () => {
     });
 
     test("OR policy should short-circuit after first allow", async () => {
-      const orPolicy = buildOrPolicy({
-        policies: [
-          buildCountingPolicy(true), // Allows, should cause short-circuit
-          buildCountingPolicy(false), // Denies, should not be evaluated
-        ],
-      });
+      const orPolicy = buildOrPolicy([
+        buildCountingPolicy(true), // Allows, should cause short-circuit
+        buildCountingPolicy(false), // Denies, should not be evaluated
+      ]);
       await Effect.runPromise(
         orPolicy.evaluateAccess({
           subject,
@@ -555,25 +527,21 @@ describe("Original Test Suite", () => {
   });
 });
 
-// --- makePolicy Tests ---
-describe("makePolicy", () => {
-  type BuilderSubject = { name: string };
-  const builderSubjectAlice: BuilderSubject = { name: "Alice" };
-  const builderSubjectBob: BuilderSubject = { name: "Bob" };
-  const builderSubjectAny: BuilderSubject = { name: "Any" };
+// --- policyFactory define() Tests ---
+describe("define (custom policies)", () => {
+  const builderSubjectAlice = { name: "Alice" };
+  const builderSubjectBob = { name: "Bob" };
+  const builderSubjectAny = { name: "Any" };
 
-  // Other types were empty structs, reuse TestAction/Resource/Context
-  type BuilderResource = TestResource;
-  type BuilderAction = TestAction;
-  type BuilderContext = TestContext;
+  const define = policyFactory({
+    subject: Schema.Struct({ name: Schema.String }),
+    resource: Schema.Struct({ id: Schema.String }),
+    action: Schema.Unknown,
+    context: Schema.Unknown,
+  });
 
   test("Policy Allows When No Predicates", async () => {
-    const policy = makePolicy<
-      BuilderSubject,
-      BuilderResource,
-      BuilderAction,
-      BuilderContext
-    >("NoPredicatesPolicy");
+    const policy = define("NoPredicatesPolicy");
 
     const result = await Effect.runPromise(
       policy.evaluateAccess({
@@ -587,16 +555,10 @@ describe("makePolicy", () => {
   });
 
   test("Policy With Subject Predicate", async () => {
-    const policy = makePolicy<
-      BuilderSubject,
-      BuilderResource,
-      BuilderAction,
-      BuilderContext
-    >("SubjectPolicy", {
-      subject: (s) => Effect.succeed(s.name === "Alice"),
+    const policy = define("SubjectPolicy", {
+      subject: (s) => s.name === "Alice",
     });
 
-    // Should allow if the subject's name is "Alice"
     let result = await Effect.runPromise(
       policy.evaluateAccess({
         subject: builderSubjectAlice,
@@ -607,7 +569,6 @@ describe("makePolicy", () => {
     );
     expect(isGranted(result)).toBe(true);
 
-    // Otherwise, it should deny
     result = await Effect.runPromise(
       policy.evaluateAccess({
         subject: builderSubjectBob,
@@ -619,18 +580,9 @@ describe("makePolicy", () => {
     expect(isGranted(result)).toBe(false);
   });
 
-  test("Policy Effect Deny", async () => {
-    const policy = makePolicy<
-      BuilderSubject,
-      BuilderResource,
-      BuilderAction,
-      BuilderContext
-    >("DenyPolicy", {
-      intent: 'deny',
-    });
+  test("Policy With Deny Intent", async () => {
+    const policy = define("DenyPolicy", { intent: "deny" });
 
-    // Even though no predicate fails (so predicate returns true),
-    // the effect should result in a Denied outcome.
     const result = await Effect.runPromise(
       policy.evaluateAccess({
         subject: builderSubjectAny,
@@ -643,39 +595,24 @@ describe("makePolicy", () => {
   });
 
   test("Policy With Extra Condition", async () => {
-    type ExtendedSubject = {
-      id: string;
-      name: string;
-    };
-    type ExtendedResource = {
-      ownerId: string;
-    };
-    type ExtendedAction = TestAction;
-    type ExtendedContext = TestContext;
-
-    const subjectId = newId();
-    const aliceOwnerSubject: ExtendedSubject = {
-      id: subjectId,
-      name: "Alice",
-    };
-    const resourceOwnedByAlice: ExtendedResource = { ownerId: subjectId };
-    const resourceOwnedByOther: ExtendedResource = { ownerId: newId() };
-
-    // Build a policy that checks:
-    //   1. Subject's name is "Alice"
-    //   2. And that subject.id == resource.owner_id (via extra condition)
-    const policy = makePolicy<
-      ExtendedSubject,
-      ExtendedResource,
-      ExtendedAction,
-      ExtendedContext
-    >("AliceOwnerPolicy", {
-      subject: (s) => Effect.succeed(s.name === "Alice"),
-      when: ({ subject, resource }) =>
-        Effect.succeed(subject.id === resource.ownerId),
+    const extDefine = policyFactory({
+      subject: Schema.Struct({ id: Schema.String, name: Schema.String }),
+      resource: Schema.Struct({ ownerId: Schema.String }),
+      action: Schema.Unknown,
+      context: Schema.Unknown,
     });
 
-    // Case where both conditions are met.
+    const subjectId = newId();
+    const aliceOwnerSubject = { id: subjectId, name: "Alice" };
+    const resourceOwnedByAlice = { ownerId: subjectId };
+    const resourceOwnedByOther = { ownerId: newId() };
+
+    const policy = extDefine("AliceOwnerPolicy", {
+      subject: (s) => s.name === "Alice",
+      when: ({ subject, resource }) => subject.id === resource.ownerId,
+    });
+
+    // Both conditions met
     let result = await Effect.runPromise(
       policy.evaluateAccess({
         subject: aliceOwnerSubject,
@@ -686,23 +623,23 @@ describe("makePolicy", () => {
     );
     expect(isGranted(result)).toBe(true);
 
-    // Case where extra condition fails (different id)
+    // Extra condition fails
     result = await Effect.runPromise(
       policy.evaluateAccess({
-        subject: aliceOwnerSubject, // Still Alice
+        subject: aliceOwnerSubject,
         action: testAction,
-        resource: resourceOwnedByOther, // Owned by someone else
+        resource: resourceOwnedByOther,
         context: testContext,
       })
     );
     expect(isGranted(result)).toBe(false);
 
-    // Case where subject condition fails (not Alice)
+    // Subject condition fails
     result = await Effect.runPromise(
       policy.evaluateAccess({
-        subject: { id: subjectId, name: "Bob" }, // Not Alice
+        subject: { id: subjectId, name: "Bob" },
         action: testAction,
-        resource: resourceOwnedByAlice, // Owned by Alice's ID, but subject is Bob
+        resource: resourceOwnedByAlice,
         context: testContext,
       })
     );

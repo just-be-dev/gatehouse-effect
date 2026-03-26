@@ -10,81 +10,79 @@ This document provides practical examples of how to use the gatehouse-effect lib
 
 ## 1. Basic Setup
 
-First, let's define the types we'll use for our subjects (users), resources (documents), actions, and context.
+Define your domain with Effect Schemas. Types are inferred automatically — no generic parameters needed anywhere.
 
 ```typescript
-import { Effect, Match } from 'effect';
+import { Effect, Schema } from 'effect';
 import {
-  buildRbacPolicy,
-  buildAbacPolicy,
-  buildRebacPolicy,
+  policyFactory,
   buildAndPolicy,
   buildOrPolicy,
   buildNotPolicy,
-  makePolicy,
   checkPermissions,
   isGranted,
   getDisplayTrace,
   formatResult,
 } from 'gatehouse-effect';
 
-// Define types for your application
-type User = {
-  id: string;
-  roles: string[]; // e.g., ["admin", "editor", "viewer"]
-  department: string;
-};
+// Define your domain as schemas
+const User = Schema.Struct({
+  id: Schema.String,
+  roles: Schema.Array(Schema.String),
+  department: Schema.String,
+});
 
-type Document = {
-  id: string;
-  ownerId: string;
-  isPublic: boolean;
-  requiredDepartment: string | null; // e.g., "HR", "Engineering"
-};
+const Document = Schema.Struct({
+  id: Schema.String,
+  ownerId: Schema.String,
+  isPublic: Schema.Boolean,
+  requiredDepartment: Schema.NullOr(Schema.String),
+});
 
-type Action = "read" | "write" | "delete" | "comment";
+const Action = Schema.Literal("read", "write", "delete", "comment");
 
-type RequestContext = {
-  ipAddress: string;
-  timestamp: Date;
-};
+const RequestContext = Schema.Struct({
+  ipAddress: Schema.String,
+  timestamp: Schema.DateFromSelf,
+});
+
+// Create a typed policy factory — all types are inferred from the schemas
+const define = policyFactory({
+  subject: User,
+  resource: Document,
+  action: Action,
+  context: RequestContext,
+});
 
 // Sample data
-const adminUser: User = { id: "user-admin", roles: ["admin"], department: "IT" };
-const editorUser: User = { id: "user-editor", roles: ["editor"], department: "Marketing" };
-const viewerUser: User = { id: "user-viewer", roles: ["viewer"], department: "Sales" };
-const guestUser: User = { id: "user-guest", roles: [], department: "External" };
+const adminUser = { id: "user-admin", roles: ["admin"], department: "IT" };
+const editorUser = { id: "user-editor", roles: ["editor"], department: "Marketing" };
+const viewerUser = { id: "user-viewer", roles: ["viewer"], department: "Sales" };
+const guestUser = { id: "user-guest", roles: [] as string[], department: "External" };
 
-const publicDoc: Document = { id: "doc-public", ownerId: editorUser.id, isPublic: true, requiredDepartment: null };
-const privateDoc: Document = { id: "doc-private", ownerId: editorUser.id, isPublic: false, requiredDepartment: null };
-const hrDoc: Document = { id: "doc-hr", ownerId: adminUser.id, isPublic: false, requiredDepartment: "HR" };
+const publicDoc = { id: "doc-public", ownerId: editorUser.id, isPublic: true, requiredDepartment: null };
+const privateDoc = { id: "doc-private", ownerId: editorUser.id, isPublic: false, requiredDepartment: null };
+const hrDoc = { id: "doc-hr", ownerId: adminUser.id, isPublic: false, requiredDepartment: "HR" };
 
-const sampleContext: RequestContext = { ipAddress: "192.168.1.100", timestamp: new Date() };
+const sampleContext = { ipAddress: "192.168.1.100", timestamp: new Date() };
 ```
 
 ## 2. Role-Based Access Control (RBAC)
 
-An RBAC policy grants access based on the roles assigned to the subject.
-
-**Example:** Allow users with the _"editor"_ or _"admin"_ role to write, and users with _"viewer"_, _"editor"_, or _"admin"_ roles to read.
+Use `define.rbac` with a declarative role map. The keys are enforced by the `Action` schema — TypeScript requires exhaustive coverage of all action literals.
 
 ```typescript
-const rbacPolicy = buildRbacPolicy<User, Document, Action, RequestContext, string>({
-  name: "Standard RBAC Policy",
-  // Resolvers can return plain values or Effect.Effect values
-  requiredRolesResolver: (resource, action) =>
-    Match.value(action).pipe(
-      Match.when("read", () => ["viewer", "editor", "admin"]),
-      Match.when("write", () => ["editor", "admin"]),
-      Match.when("comment", () => ["editor", "admin"]),
-      Match.when("delete", () => ["admin"]),
-      Match.exhaustive
-    ),
-  userRolesResolver: (subject) => subject.roles,
+const rbacPolicy = define.rbac("Standard RBAC Policy", {
+  roles: {
+    read: ["viewer", "editor", "admin"],
+    write: ["editor", "admin"],
+    comment: ["editor", "admin"],
+    delete: ["admin"],
+  },
+  userRoles: (subject) => subject.roles,
 });
 
 // --- Evaluation ---
-// Evaluate a single policy directly using Effect.runPromise
 const result = await Effect.runPromise(
   rbacPolicy.evaluateAccess({
     subject: editorUser,
@@ -104,31 +102,27 @@ const result2 = await Effect.runPromise(
   })
 );
 console.log(`Viewer write publicDoc: ${isGranted(result2)}`); // Output: false
-// To see *why* it was denied:
-// console.log(formatResult(result2));
 ```
 
 **Explanation:**
 
-*   `buildRbacPolicy` creates an RBAC policy.
-*   `requiredRolesResolver` and `userRolesResolver` can return plain values (`Role[]`) or `Effect.Effect<Role[]>`. Use plain values for simple lookups; use Effects for async or effectful operations.
-*   Use `isGranted(result)` to check if a `PolicyEvalResult` grants access.
-*   Use `formatResult(result)` to get a human-readable explanation.
+*   `define.rbac` creates an RBAC policy with a static role map.
+*   The role map keys must cover every action literal from the `Action` schema — a missing key is a type error.
+*   `userRoles` can return a plain array or `Effect.Effect<Role[]>` for async role lookups.
 
 ## 3. Attribute-Based Access Control (ABAC)
 
-An ABAC policy makes decisions based on attributes of the subject, resource, action, and context.
+Use `define` with predicate functions and/or action literals to create attribute-based policies.
 
 **Example:** Allow anyone to "read" a document if its `isPublic` attribute is true.
 
 ```typescript
-const publicReadPolicy = buildAbacPolicy<User, Document, Action, RequestContext>({
-  name: "Public Document Read Access",
-  condition: ({ resource, action }) => action === "read" && resource.isPublic,
+const publicReadPolicy = define("Public Document Read Access", {
+  action: "read",
+  resource: (r) => r.isPublic,
 });
 
 // --- Evaluation ---
-// Guest tries to read a public document (Allowed by ABAC)
 const result3 = await Effect.runPromise(
   publicReadPolicy.evaluateAccess({
     subject: guestUser,
@@ -139,7 +133,6 @@ const result3 = await Effect.runPromise(
 );
 console.log(`Guest read publicDoc: ${isGranted(result3)}`); // Output: true
 
-// Guest tries to read a private document (Denied by ABAC)
 const result4 = await Effect.runPromise(
   publicReadPolicy.evaluateAccess({
     subject: guestUser,
@@ -153,24 +146,24 @@ console.log(`Guest read privateDoc: ${isGranted(result4)}`); // Output: false
 
 **Explanation:**
 
-*   `buildAbacPolicy` creates an ABAC policy based on a `condition` function.
-*   The `condition` function can return a plain `boolean` or `Effect.Effect<boolean>`.
+*   `action: "read"` matches only the "read" action — no function needed.
+*   `action: ["read", "write"]` matches multiple actions.
+*   `resource: (r) => r.isPublic` is a predicate that returns a plain `boolean` or `Effect.Effect<boolean>`.
+*   All provided predicates are AND'd together.
 
 ## 4. Relationship-Based Access Control (ReBAC)
 
-ReBAC policies grant access based on the relationship between the subject and the resource (e.g., owner, member).
+Use `define.rebac` to grant access based on a named relationship between subject and resource.
 
 **Example:** Allow a user to access a document only if they are the owner.
 
 ```typescript
-const ownerPolicy = buildRebacPolicy<User, Document, Action, RequestContext>({
-  name: "Owner Policy",
+const ownerPolicy = define.rebac("Owner Policy", {
   relationship: "owner",
   resolver: ({ subject, resource }) => subject.id === resource.ownerId,
 });
 
 // --- Evaluation ---
-// Editor accesses their own document (Allowed)
 const result5 = await Effect.runPromise(
   ownerPolicy.evaluateAccess({
     subject: editorUser,
@@ -181,7 +174,6 @@ const result5 = await Effect.runPromise(
 );
 console.log(`Editor delete own doc: ${isGranted(result5)}`); // Output: true
 
-// Editor tries to access admin's document (Denied)
 const result6 = await Effect.runPromise(
   ownerPolicy.evaluateAccess({
     subject: editorUser,
@@ -193,50 +185,39 @@ const result6 = await Effect.runPromise(
 console.log(`Editor delete admin's doc: ${isGranted(result6)}`); // Output: false
 ```
 
-**Explanation:**
+## 5. Custom Policies with `define`
 
-*   `buildRebacPolicy` defines access based on a named `relationship`.
-*   The `resolver` can return a plain `boolean` or `Effect.Effect<boolean>` indicating whether the subject has the relationship with the resource.
-
-## 5. Using `makePolicy`
-
-`makePolicy` creates custom policies from individual predicate functions. All predicates are AND'd together. Omitted predicates default to true.
+`define` creates custom policies from individual predicates. All predicates are AND'd together. Omitted predicates default to true.
 
 **Example:** Allow users in the "HR" department to "read" documents marked for "HR", but only during business hours.
 
 ```typescript
-const isBusinessHours = (context: RequestContext): boolean => {
+const isBusinessHours = (context: { timestamp: Date }): boolean => {
   const hour = context.timestamp.getHours();
   return hour >= 9 && hour < 17;
 };
 
-// Predicates can return a plain boolean or an Effect.Effect<boolean>
-const hrAccessPolicy = makePolicy<User, Document, Action, RequestContext>("HR Department Access", {
-  subject: (subject) => subject.department === "HR",
-  resource: (resource) => resource.requiredDepartment === "HR",
-  action: (action) => action === "read",
+const hrAccessPolicy = define("HR Department Access", {
+  subject: (s) => s.department === "HR",
+  resource: (r) => r.requiredDepartment === "HR",
+  action: "read",
   context: (ctx) => isBusinessHours(ctx),
 });
 
 // --- Evaluation ---
-const hrUser: User = { id: "user-hr", roles: ["viewer"], department: "HR" };
-const outsideHoursContext: RequestContext = {
-  ipAddress: "192.168.1.101",
-  timestamp: new Date(2023, 10, 15, 18, 0, 0), // 6 PM
-};
+const hrUser = { id: "user-hr", roles: ["viewer"], department: "HR" };
+const outsideHoursContext = { ipAddress: "192.168.1.101", timestamp: new Date(2023, 10, 15, 18, 0, 0) };
 
-// HR User reading HR Doc during business hours (Allowed)
 const result7 = await Effect.runPromise(
   hrAccessPolicy.evaluateAccess({
     subject: hrUser,
     resource: hrDoc,
     action: "read",
-    context: sampleContext, // Assumed to be within business hours
+    context: sampleContext, // Assumed within business hours
   })
 );
 console.log(`HR User read HR Doc (Business Hours): ${isGranted(result7)}`); // Output: true
 
-// HR User reading HR Doc outside business hours (Denied)
 const result8 = await Effect.runPromise(
   hrAccessPolicy.evaluateAccess({
     subject: hrUser,
@@ -250,53 +231,40 @@ console.log(`HR User read HR Doc (Outside Hours): ${isGranted(result8)}`); // Ou
 
 **Explanation:**
 
-*   `makePolicy` takes a name and an options object with optional predicates: `subject`, `resource`, `action`, `context`, and `when`.
-*   Each predicate can return a plain `boolean` or an `Effect.Effect<boolean>`. Use plain booleans for simple checks; use Effects when the predicate needs to perform async or effectful operations.
-*   All provided predicates must return true for the policy to grant access.
+*   Predicates: `subject`, `resource`, `action`, `context`, and `when`.
+*   Each predicate can return a plain `boolean` or an `Effect.Effect<boolean>`.
+*   `action` can also be a literal (`"read"`) or array (`["read", "write"]`) instead of a function.
 *   Use `intent: 'deny'` to create policies that explicitly deny access when predicates match.
 *   The `when` predicate receives all four arguments `{ subject, resource, action, context }` for cross-cutting conditions.
 
 ## 6. Combining Policies
 
-You can combine existing policies using logical operators: AND, OR, NOT.
+Combine existing policies using logical operators: AND, OR, NOT.
 
 **Example:** Grant "comment" access if the user is the owner **AND** the document is not public, **OR** if the user is an "admin".
 
 ```typescript
-// Policy 1: Is the user the owner? (ReBAC)
-const isOwnerPolicy = buildRebacPolicy<User, Document, Action, RequestContext>({
-  name: "IsOwner",
+const isOwnerPolicy = define.rebac("IsOwner", {
   relationship: "owner",
   resolver: ({ subject, resource }) => subject.id === resource.ownerId,
 });
 
-// Policy 2: Is the document private? (ABAC)
-const isPrivatePolicy = buildAbacPolicy<User, Document, Action, RequestContext>({
-  name: "IsPrivate",
-  condition: ({ resource }) => !resource.isPublic,
+const isPrivatePolicy = define("IsPrivate", {
+  resource: (r) => !r.isPublic,
 });
 
-// Policy 3: Is the user an admin? (RBAC)
-const isAdminPolicy = buildRbacPolicy<User, Document, Action, RequestContext, string>({
-  name: "IsAdmin",
-  requiredRolesResolver: () => ["admin"],
-  userRolesResolver: (subject) => subject.roles,
+const isAdminPolicy = define.rbac("IsAdmin", {
+  roles: { read: ["admin"], write: ["admin"], comment: ["admin"], delete: ["admin"] },
+  userRoles: (s) => s.roles,
 });
 
 // Combine: (Owner AND Private)
-const ownerAndPrivatePolicy = buildAndPolicy({
-  name: "OwnerAndPrivate",
-  policies: [isOwnerPolicy, isPrivatePolicy],
-});
+const ownerAndPrivatePolicy = buildAndPolicy("OwnerAndPrivate", [isOwnerPolicy, isPrivatePolicy]);
 
 // Combine: (Owner AND Private) OR Admin
-const finalCommentPolicy = buildOrPolicy({
-  name: "CommentAccessLogic",
-  policies: [ownerAndPrivatePolicy, isAdminPolicy],
-});
+const finalCommentPolicy = buildOrPolicy("CommentAccessLogic", [ownerAndPrivatePolicy, isAdminPolicy]);
 
 // --- Evaluation ---
-// Owner comments on their private doc (Allowed: Owner AND Private)
 const result9 = await Effect.runPromise(
   finalCommentPolicy.evaluateAccess({
     subject: editorUser,
@@ -307,7 +275,6 @@ const result9 = await Effect.runPromise(
 );
 console.log(`Owner comment private doc: ${isGranted(result9)}`); // Output: true
 
-// Owner comments on their public doc (Denied: Not Private)
 const result10 = await Effect.runPromise(
   finalCommentPolicy.evaluateAccess({
     subject: editorUser,
@@ -318,7 +285,6 @@ const result10 = await Effect.runPromise(
 );
 console.log(`Owner comment public doc: ${isGranted(result10)}`); // Output: false
 
-// Admin comments on a private doc they don't own (Allowed: Is Admin)
 const result11 = await Effect.runPromise(
   finalCommentPolicy.evaluateAccess({
     subject: adminUser,
@@ -332,14 +298,15 @@ console.log(`Admin comment private doc: ${isGranted(result11)}`); // Output: tru
 
 **Explanation:**
 
-*   `buildAndPolicy` requires all its child policies to grant access.
-*   `buildOrPolicy` requires at least one of its child policies to grant access.
-*   `buildNotPolicy` inverts the result of its child policy (Grant → Deny, Deny → Grant).
-*   Policies can be nested to create complex logic.
-*   To restrict combined logic to a specific action, wrap it with `makePolicy`:
+*   `buildAndPolicy([...])` requires all child policies to grant access.
+*   `buildOrPolicy([...])` requires at least one child policy to grant access.
+*   `buildNotPolicy(policy)` inverts the result of its child policy.
+*   All combinators accept an optional name as the first argument for tracing: `buildAndPolicy("Name", [...])`.
+*   Policies from the factory work seamlessly with combinators.
+*   To restrict combined logic to a specific action, wrap it:
     ```typescript
-    const commentOnly = makePolicy<User, Document, Action, RequestContext>("CommentOnly", {
-      action: (action) => action === "comment",
+    const commentOnly = define("CommentOnly", {
+      action: "comment",
       when: ({ subject, resource, action, context }) =>
         Effect.map(
           finalCommentPolicy.evaluateAccess({ subject, resource, action, context }),
@@ -350,19 +317,16 @@ console.log(`Admin comment private doc: ${isGranted(result11)}`); // Output: tru
 
 ## 7. Using `checkPermissions`
 
-`checkPermissions` is the primary way to evaluate multiple policies together. It takes an array of policies and returns a curried evaluator function. Policies are evaluated sequentially with **first-grant-wins** semantics.
+`checkPermissions` evaluates multiple policies sequentially with **first-grant-wins** semantics. The result uses Effect's error channel for access control decisions:
 
-The result is typed in the Effect channels:
-- **Success channel:** `AccessGranted` — a policy granted access
-- **Error channel:** `AccessDenied | NoPoliciesError` — all policies denied, or no policies configured
+- **Success channel:** `AccessGranted`
+- **Error channel:** `AccessDenied | NoPoliciesError`
 
 ```typescript
-// Create the evaluator with multiple policies
 const check = checkPermissions([publicReadPolicy, rbacPolicy]);
 
 // --- Granted access ---
 const program = Effect.gen(function* () {
-  // Guest reading a public doc — publicReadPolicy grants access
   const granted = yield* check({
     subject: guestUser,
     resource: publicDoc,
@@ -376,14 +340,14 @@ const program = Effect.gen(function* () {
 await Effect.runPromise(program);
 
 // --- Denied access ---
-// Use Effect.merge to unify success and error channels for inspection
+// Use Effect.catch to handle the error channel for inspection
 const program2 = Effect.gen(function* () {
   const result = yield* check({
     subject: guestUser,
     resource: privateDoc,
     action: "write",
     context: sampleContext,
-  }).pipe(Effect.merge);
+  }).pipe(Effect.catch((e) => Effect.succeed(e)));
 
   if (result._tag === "AccessGranted") {
     console.log("Access Granted!");
@@ -394,22 +358,6 @@ const program2 = Effect.gen(function* () {
 });
 
 await Effect.runPromise(program2);
-
-// --- No policies configured ---
-const emptyCheck = checkPermissions<User, Document, Action, RequestContext>([]);
-
-const program3 = Effect.gen(function* () {
-  const result = yield* emptyCheck({
-    subject: adminUser,
-    resource: publicDoc,
-    action: "read",
-    context: sampleContext,
-  }).pipe(Effect.merge);
-
-  console.log(result._tag); // Output: NoPoliciesError
-});
-
-await Effect.runPromise(program3);
 ```
 
 **Explanation:**
@@ -417,13 +365,12 @@ await Effect.runPromise(program3);
 *   `checkPermissions(policies)` returns a function `(args) => Effect<AccessGranted, AccessDenied | NoPoliciesError>`.
 *   On success, you get an `AccessGranted` with `policyType`, `reason`, and `trace`.
 *   On failure, the error is `AccessDenied` (with `reason` and `trace`) or `NoPoliciesError`.
-*   Use `Effect.merge` to bring the error into the success channel for pattern matching on `_tag`.
-*   Use `getDisplayTrace(result)` to get a formatted trace string showing which policies were evaluated and their outcomes.
-*   Use `formatResult(policyEvalResult)` to format individual `PolicyEvalResult` values.
+*   Use `Effect.catch` to bring the error into the success channel for pattern matching on `_tag`.
+*   Use `getDisplayTrace(result)` for a formatted trace of which policies were evaluated.
 
 ## 8. Running Effects
 
-All evaluations in gatehouse-effect return `Effect` values. You need to run them to get results:
+All evaluations return `Effect` values. Run them to get results:
 
 ```typescript
 // Option 1: Effect.runPromise — runs the effect and returns a Promise
@@ -440,9 +387,12 @@ const program = Effect.gen(function* () {
 });
 await Effect.runPromise(program);
 
-// Option 3: pipe with Effect.merge for checkPermissions
+// Option 3: pipe with Effect.catch for checkPermissions
 const check = checkPermissions([rbacPolicy, publicReadPolicy]);
-const merged = check({ subject, resource, action, context }).pipe(Effect.merge);
-const accessResult = await Effect.runPromise(merged);
+const accessResult = await Effect.runPromise(
+  check({ subject, resource, action, context }).pipe(
+    Effect.catch((e) => Effect.succeed(e))
+  )
+);
 // accessResult is AccessGranted | AccessDenied | NoPoliciesError
 ```
