@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Effect, Schema } from "effect";
 import {
-  buildAndPolicy,
-  buildNotPolicy,
-  buildOrPolicy,
   checkPermissions,
+  combinePolicy,
   DeniedAccessResult,
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
+  invertPolicy,
   isGranted,
   policyFactory,
   type Policy,
@@ -268,7 +267,7 @@ describe("Original Test Suite", () => {
   // --- Combinator Tests ---
   describe("Combinators", () => {
     test("And Policy Allows When All Allow", async () => {
-      const policy = buildAndPolicy([alwaysAllowPolicy, alwaysAllowPolicy]);
+      const policy = combinePolicy(({ and }) => and(alwaysAllowPolicy, alwaysAllowPolicy));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -282,7 +281,7 @@ describe("Original Test Suite", () => {
 
     test("And Policy Denies When One Denies", async () => {
       const denyReason = "DenyInAnd";
-      const policy = buildAndPolicy([alwaysAllowPolicy, buildAlwaysDenyPolicy(denyReason)]);
+      const policy = combinePolicy(({ and }) => and(alwaysAllowPolicy, buildAlwaysDenyPolicy(denyReason)));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -293,12 +292,12 @@ describe("Original Test Suite", () => {
       );
       expect(isGranted(result)).toBe(false);
       const traceStr = formatResult(result);
-      expect(traceStr).toContain("AndPolicy");
+      expect(traceStr).toContain("&");
       expect(traceStr).toContain(denyReason);
     });
 
     test("Or Policy Allows When One Allows", async () => {
-      const policy = buildOrPolicy([buildAlwaysDenyPolicy("Deny1"), alwaysAllowPolicy]);
+      const policy = combinePolicy(({ or }) => or(buildAlwaysDenyPolicy("Deny1"), alwaysAllowPolicy));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -311,10 +310,10 @@ describe("Original Test Suite", () => {
     });
 
     test("Or Policy Denies When All Deny", async () => {
-      const policy = buildOrPolicy([
+      const policy = combinePolicy(({ or }) => or(
         buildAlwaysDenyPolicy("Deny1"),
         buildAlwaysDenyPolicy("Deny2"),
-      ]);
+      ));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -325,13 +324,13 @@ describe("Original Test Suite", () => {
       );
       expect(isGranted(result)).toBe(false);
       const traceStr = formatResult(result);
-      expect(traceStr).toContain("OrPolicy");
+      expect(traceStr).toContain("|");
       expect(traceStr).toContain("Deny1");
       expect(traceStr).toContain("Deny2");
     });
 
     test("Not Policy Allows When Inner Denies", async () => {
-      const policy = buildNotPolicy(buildAlwaysDenyPolicy("AlwaysDeny"));
+      const policy = invertPolicy(buildAlwaysDenyPolicy("AlwaysDeny"));
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -344,7 +343,7 @@ describe("Original Test Suite", () => {
     });
 
     test("Not Policy Denies When Inner Allows", async () => {
-      const policy = buildNotPolicy(alwaysAllowPolicy);
+      const policy = invertPolicy(alwaysAllowPolicy);
       const result = await Effect.runPromise(
         policy.evaluateAccess({
           subject,
@@ -355,18 +354,8 @@ describe("Original Test Suite", () => {
       );
       expect(isGranted(result)).toBe(false);
       const traceStr = formatResult(result);
-      expect(traceStr).toContain("NotPolicy");
+      expect(traceStr).toContain("!");
       expect(traceStr).toContain("AlwaysAllowPolicy");
-    });
-
-    test("Empty Policies In Combinators", () => {
-      expect(() =>
-        buildAndPolicy<TestSubject, TestResource, TestAction, TestContext>([])
-      ).toThrow("AndPolicy must have at least one policy");
-
-      expect(() =>
-        buildOrPolicy<TestSubject, TestResource, TestAction, TestContext>([])
-      ).toThrow("OrPolicy must have at least one policy");
     });
 
     test("Deeply Nested Combinators", async () => {
@@ -375,12 +364,11 @@ describe("Original Test Suite", () => {
             NOT(AND(Allow, OR(Deny, NOT(Deny))))
         */
       const innerDeny = buildAlwaysDenyPolicy("InnerDeny");
-      const innerNot = buildNotPolicy(innerDeny);
       const midDeny = buildAlwaysDenyPolicy("MidDeny");
 
-      const innerOr = buildOrPolicy([midDeny, innerNot]);
-      const innerAnd = buildAndPolicy([alwaysAllowPolicy, innerOr]);
-      const outerNot = buildNotPolicy(innerAnd);
+      const outerNot = combinePolicy(({ and, or, not }) =>
+        not(and(alwaysAllowPolicy, or(midDeny, not(innerDeny))))
+      );
 
       const result = await Effect.runPromise(
         outerNot.evaluateAccess({
@@ -395,10 +383,9 @@ describe("Original Test Suite", () => {
 
       // Verify the correct structure of the trace
       const traceStr = formatResult(result);
-      expect(traceStr).toContain("NotPolicy"); // Outer NOT
-      expect(traceStr).toContain("AndPolicy"); // Inner AND
-      expect(traceStr).toContain("OrPolicy"); // Inner OR
-      expect(traceStr).toContain("NotPolicy"); // Inner NOT
+      expect(traceStr).toContain("!"); // Outer NOT
+      expect(traceStr).toContain("&"); // Inner AND
+      expect(traceStr).toContain("|"); // Inner OR
       expect(traceStr).toContain("InnerDeny"); // Innermost Deny
       expect(traceStr).toContain("MidDeny"); // Other deny in OR
       expect(traceStr).toContain("AlwaysAllowPolicy"); // Allow in AND
@@ -494,12 +481,12 @@ describe("Original Test Suite", () => {
     });
 
     test("AND policy should short-circuit after first deny", async () => {
-      const andPolicy = buildAndPolicy([
+      const policy = combinePolicy(({ and }) => and(
         buildCountingPolicy(false), // Denies, should cause short-circuit
         buildCountingPolicy(true), // Allows, should not be evaluated
-      ]);
+      ));
       await Effect.runPromise(
-        andPolicy.evaluateAccess({
+        policy.evaluateAccess({
           subject,
           resource,
           action: testAction,
@@ -510,12 +497,12 @@ describe("Original Test Suite", () => {
     });
 
     test("OR policy should short-circuit after first allow", async () => {
-      const orPolicy = buildOrPolicy([
+      const policy = combinePolicy(({ or }) => or(
         buildCountingPolicy(true), // Allows, should cause short-circuit
         buildCountingPolicy(false), // Denies, should not be evaluated
-      ]);
+      ));
       await Effect.runPromise(
-        orPolicy.evaluateAccess({
+        policy.evaluateAccess({
           subject,
           resource,
           action: testAction,

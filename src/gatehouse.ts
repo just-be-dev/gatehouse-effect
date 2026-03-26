@@ -349,6 +349,9 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
   return { name, evaluateAccess };
 }
 
+const wrap = (name: string): string =>
+  name.includes(' & ') || name.includes(' | ') ? `(${name})` : name;
+
 // ---- AND Policy ----
 
 /**
@@ -364,12 +367,15 @@ function buildAndPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
-  const name = typeof nameOrPolicies === 'string' ? nameOrPolicies : 'AndPolicy';
   const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
 
   if (!policies.length) {
     throw new Error('AndPolicy must have at least one policy');
   }
+
+  const name = typeof nameOrPolicies === 'string'
+    ? nameOrPolicies
+    : policies.map((p) => wrap(p.name)).join(' & ');
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -417,12 +423,15 @@ function buildOrPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
-  const name = typeof nameOrPolicies === 'string' ? nameOrPolicies : 'OrPolicy';
   const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
 
   if (!policies.length) {
     throw new Error('OrPolicy must have at least one policy');
   }
+
+  const name = typeof nameOrPolicies === 'string'
+    ? nameOrPolicies
+    : policies.map((p) => wrap(p.name)).join(' | ');
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -462,15 +471,15 @@ function buildOrPolicy<Sub, Res, Act, Ctx>(
  *
  * @example
  * ```ts
- * buildNotPolicy(publicPolicy)
- * buildNotPolicy("NotPublic", publicPolicy)
+ * invertPolicy(publicPolicy)
+ * invertPolicy("NotPublic", publicPolicy)
  * ```
  */
-function buildNotPolicy<Sub, Res, Act, Ctx>(
+function invertPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicy: string | Policy<Sub, Res, Act, Ctx>,
   maybePolicy?: Policy<Sub, Res, Act, Ctx>
 ): Policy<Sub, Res, Act, Ctx> {
-  const name = typeof nameOrPolicy === 'string' ? nameOrPolicy : 'NotPolicy';
+  const name = typeof nameOrPolicy === 'string' ? nameOrPolicy : `!${wrap(nameOrPolicy.name)}`;
   const policy = typeof nameOrPolicy === 'string' ? maybePolicy! : nameOrPolicy;
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
@@ -489,6 +498,46 @@ function buildNotPolicy<Sub, Res, Act, Ctx>(
   });
 
   return { name, evaluateAccess };
+}
+
+// ---- combinePolicy ----
+
+interface Combinators<Sub, Res, Act, Ctx> {
+  and: (...policies: Policy<Sub, Res, Act, Ctx>[]) => Policy<Sub, Res, Act, Ctx>;
+  or: (...policies: Policy<Sub, Res, Act, Ctx>[]) => Policy<Sub, Res, Act, Ctx>;
+  not: (policy: Policy<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
+}
+
+type CombineFn<Sub, Res, Act, Ctx> = (combinators: Combinators<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
+
+/**
+ * Compose policies using `and`, `or`, and `not` combinators in a single expression.
+ *
+ * @example
+ * ```ts
+ * combinePolicy((and, or, not) => and(rbacPolicy, or(abacPolicy, not(publicPolicy))))
+ * combinePolicy("CustomName", (and, or, not) => and(policy1, not(policy2)))
+ * ```
+ */
+function combinePolicy<Sub, Res, Act, Ctx>(
+  nameOrFn: string | CombineFn<Sub, Res, Act, Ctx>,
+  maybeFn?: CombineFn<Sub, Res, Act, Ctx>,
+): Policy<Sub, Res, Act, Ctx> {
+  const name = typeof nameOrFn === 'string' ? nameOrFn : undefined;
+  const fn = typeof nameOrFn === 'string' ? maybeFn! : nameOrFn;
+
+  const combinators: Combinators<Sub, Res, Act, Ctx> = {
+    and: (...policies) => buildAndPolicy<Sub, Res, Act, Ctx>(policies),
+    or: (...policies) => buildOrPolicy<Sub, Res, Act, Ctx>(policies),
+    not: (policy) => invertPolicy<Sub, Res, Act, Ctx>(policy),
+  };
+
+  const result = fn(combinators);
+
+  if (name) {
+    return { name, evaluateAccess: result.evaluateAccess };
+  }
+  return result;
 }
 
 // ---- Policy Factory ----
@@ -594,22 +643,28 @@ function policyFactory<
     });
   }
 
-  return Object.assign(define, { rbac, rebac });
+  function combine(
+    nameOrFn: string | CombineFn<Sub, Res, Act, Ctx>,
+    maybeFn?: CombineFn<Sub, Res, Act, Ctx>,
+  ): Policy<Sub, Res, Act, Ctx> {
+    return combinePolicy<Sub, Res, Act, Ctx>(nameOrFn, maybeFn);
+  }
+
+  return Object.assign(define, { rbac, rebac, combine });
 }
 
 export {
   AccessDenied,
   AccessGranted,
-  buildAndPolicy,
-  buildNotPolicy,
-  buildOrPolicy,
   checkPermissions,
   type CombineOp,
+  combinePolicy,
   CombinedResult,
   DeniedAccessResult,
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
+  invertPolicy,
   isGranted,
   NoPoliciesError,
   type Policy,

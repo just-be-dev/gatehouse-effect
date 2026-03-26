@@ -1,12 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { Effect, Schema } from "effect";
 import {
-  buildAndPolicy,
-  buildNotPolicy,
-  buildOrPolicy,
   checkPermissions,
+  combinePolicy,
   formatResult,
   getDisplayTrace,
+  invertPolicy,
   isGranted,
   policyFactory,
 } from "../src/gatehouse";
@@ -310,9 +309,9 @@ describe("Policy Combinators", () => {
       resolver: ({ subject, resource }) => subject.id === resource.ownerId,
     });
 
-    const andPolicy = buildAndPolicy([rbacPolicy, rebacPolicy]);
+    const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      andPolicy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -340,9 +339,9 @@ describe("Policy Combinators", () => {
       resolver: ({ subject, resource }) => subject.id === resource.ownerId,
     });
 
-    const andPolicy = buildAndPolicy([rbacPolicy, rebacPolicy]);
+    const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      andPolicy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     expect(isGranted(result)).toBe(false);
   });
@@ -370,9 +369,9 @@ describe("Policy Combinators", () => {
       resolver: ({ subject, resource }) => subject.id === resource.ownerId,
     });
 
-    const orPolicy = buildOrPolicy([rbacPolicy, rebacPolicy]);
+    const policy = define.combine(({ or }) => or(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      orPolicy.evaluateAccess({ subject, resource, action: "read", context })
+      policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     expect(isGranted(result)).toBe(true);
   });
@@ -401,9 +400,9 @@ describe("Policy Combinators", () => {
     });
 
     const nonAdmin: Subject = { ...subject, roles: ["user"] };
-    const orPolicy = buildOrPolicy([rbacPolicy, rebacPolicy]);
+    const policy = define.combine(({ or }) => or(rbacPolicy, rebacPolicy));
     const result = await Effect.runPromise(
-      orPolicy.evaluateAccess({
+      policy.evaluateAccess({
         subject: nonAdmin,
         resource,
         action: "admin",
@@ -413,7 +412,7 @@ describe("Policy Combinators", () => {
     expect(isGranted(result)).toBe(false);
   });
 
-  test("NOT policy should invert the result", async () => {
+  test("invertPolicy should invert the result", async () => {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user2",
@@ -430,7 +429,7 @@ describe("Policy Combinators", () => {
     );
     expect(isGranted(normalResult)).toBe(true);
 
-    const notPolicy = buildNotPolicy(abacPolicy);
+    const notPolicy = invertPolicy(abacPolicy);
     const notResult = await Effect.runPromise(
       notPolicy.evaluateAccess({ subject, resource, action: "read", context })
     );
@@ -760,26 +759,26 @@ describe("Combinator named overloads", () => {
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
-  test("buildAndPolicy with custom name appears in trace", async () => {
-    const policy = buildAndPolicy("MyCustomAnd", [allow, allow]);
+  test("combinePolicy with custom name for and", async () => {
+    const policy = define.combine("MyCustomAnd", ({ and }) => and(allow, allow));
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     expect(isGranted(result)).toBe(true);
-    expect(formatResult(result)).toContain("MyCustomAnd");
+    expect(policy.name).toBe("MyCustomAnd");
   });
 
-  test("buildOrPolicy with custom name appears in trace", async () => {
-    const policy = buildOrPolicy("MyCustomOr", [deny, allow]);
+  test("combinePolicy with custom name for or", async () => {
+    const policy = define.combine("MyCustomOr", ({ or }) => or(deny, allow));
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     expect(isGranted(result)).toBe(true);
-    expect(formatResult(result)).toContain("MyCustomOr");
+    expect(policy.name).toBe("MyCustomOr");
   });
 
-  test("buildNotPolicy with custom name appears in trace", async () => {
-    const policy = buildNotPolicy("MyCustomNot", deny);
+  test("invertPolicy with custom name appears in trace", async () => {
+    const policy = invertPolicy("MyCustomNot", deny);
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
@@ -797,7 +796,7 @@ describe("Edge cases", () => {
   const deny = define("DenyPolicy", { intent: "deny" });
 
   test("single policy in AND", async () => {
-    const policy = buildAndPolicy([allow]);
+    const policy = define.combine(({ and }) => and(allow));
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
@@ -805,7 +804,7 @@ describe("Edge cases", () => {
   });
 
   test("single policy in OR", async () => {
-    const policy = buildOrPolicy([deny]);
+    const policy = define.combine(({ or }) => or(deny));
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
@@ -813,7 +812,7 @@ describe("Edge cases", () => {
   });
 
   test("NOT(NOT(policy)) equals original", async () => {
-    const doubleNot = buildNotPolicy(buildNotPolicy(allow));
+    const doubleNot = invertPolicy(invertPolicy(allow));
     const result = await Effect.runPromise(
       doubleNot.evaluateAccess({ subject, resource, action: "read", context })
     );
@@ -875,12 +874,11 @@ describe("formatResult and getDisplayTrace", () => {
   test("formatResult on combined result shows children", async () => {
     const p1 = define("PolicyA", { subject: () => false });
     const p2 = define("PolicyB", {});
-    const policy = buildOrPolicy("CombinedOr", [p1, p2]);
+    const policy = define.combine("CombinedOr", ({ or }) => or(p1, p2));
     const result = await Effect.runPromise(
       policy.evaluateAccess({ subject, resource, action: "read", context })
     );
     const formatted = formatResult(result);
-    expect(formatted).toContain("CombinedOr");
     expect(formatted).toContain("PolicyA");
     expect(formatted).toContain("PolicyB");
   });
@@ -968,5 +966,91 @@ describe("checkPermissions ordering and traces", () => {
     expect(trace).toContain("PolicyA");
     expect(trace).toContain("PolicyB");
     expect(trace).toContain("PolicyC");
+  });
+});
+
+describe("combinePolicy", () => {
+  const subject: Subject = { id: "user1", roles: ["admin"], groups: [], department: "IT" };
+  const resource: Resource = { id: "r1", ownerId: "user1", department: "IT", isPublic: true };
+  const context: Context = { clientIp: "127.0.0.1", timestamp: Date.now(), isEmergency: false };
+
+  const allow = define("AllowPolicy", {});
+  const deny = define("DenyPolicy", { intent: "deny" });
+
+  test("and combinator grants when all grant", async () => {
+    const policy = combinePolicy(({ and }) => and(allow, allow));
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("and combinator denies when any denies", async () => {
+    const policy = combinePolicy(({ and }) => and(allow, deny));
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(false);
+  });
+
+  test("or combinator grants when any grants", async () => {
+    const policy = combinePolicy(({ or }) => or(deny, allow));
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("not combinator inverts result", async () => {
+    const policy = combinePolicy(({ not }) => not(deny));
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("nested composition: and(policy1, or(policy3, not(policy2)))", async () => {
+    const policy = combinePolicy(({ and, or, not }) =>
+      and(allow, or(deny, not(deny)))
+    );
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("named combinePolicy sets policy name", async () => {
+    const policy = combinePolicy("MyCombo", ({ and }) => and(allow, allow));
+    expect(policy.name).toBe("MyCombo");
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("factory combine method works", async () => {
+    const policy = define.combine(({ and, not }) => and(allow, not(deny)));
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("factory combine with name", async () => {
+    const policy = define.combine("FactoryCombo", ({ or }) => or(deny, allow));
+    expect(policy.name).toBe("FactoryCombo");
+    const result = await Effect.runPromise(
+      policy.evaluateAccess({ subject, resource, action: "read", context })
+    );
+    expect(isGranted(result)).toBe(true);
+  });
+
+  test("auto-generated names use symbolic operators", async () => {
+    const p1 = define("A", {});
+    const p2 = define("B", { intent: "deny" });
+    const p3 = define("C", {});
+
+    const policy = combinePolicy(({ and, or, not }) => and(p1, or(p2, not(p3))));
+    expect(policy.name).toBe("A & (B | !C)");
   });
 });

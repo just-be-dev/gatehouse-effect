@@ -16,9 +16,8 @@ Define your domain with Effect Schemas. Types are inferred automatically — no 
 import { Effect, Schema } from 'effect';
 import {
   policyFactory,
-  buildAndPolicy,
-  buildOrPolicy,
-  buildNotPolicy,
+  combinePolicy,
+  invertPolicy,
   checkPermissions,
   isGranted,
   getDisplayTrace,
@@ -258,11 +257,11 @@ const isAdminPolicy = define.rbac("IsAdmin", {
   userRoles: (s) => s.roles,
 });
 
-// Combine: (Owner AND Private)
-const ownerAndPrivatePolicy = buildAndPolicy("OwnerAndPrivate", [isOwnerPolicy, isPrivatePolicy]);
-
 // Combine: (Owner AND Private) OR Admin
-const finalCommentPolicy = buildOrPolicy("CommentAccessLogic", [ownerAndPrivatePolicy, isAdminPolicy]);
+const finalCommentPolicy = define.combine(({ and, or }) =>
+  or(and(isOwnerPolicy, isPrivatePolicy), isAdminPolicy)
+);
+// finalCommentPolicy.name → "(IsOwner & IsPrivate) | IsAdmin"
 
 // --- Evaluation ---
 const result9 = await Effect.runPromise(
@@ -298,10 +297,11 @@ console.log(`Admin comment private doc: ${isGranted(result11)}`); // Output: tru
 
 **Explanation:**
 
-*   `buildAndPolicy([...])` requires all child policies to grant access.
-*   `buildOrPolicy([...])` requires at least one child policy to grant access.
-*   `buildNotPolicy(policy)` inverts the result of its child policy.
-*   All combinators accept an optional name as the first argument for tracing: `buildAndPolicy("Name", [...])`.
+*   `combinePolicy(({ and, or, not }) => ...)` composes policies with boolean logic in a single expression.
+*   `define.combine(...)` is the factory-bound version — types flow automatically.
+*   `invertPolicy(policy)` inverts a single policy's result.
+*   Names are auto-generated from the expression: `A & (B | !C)`.
+*   Pass an optional name as the first argument: `combinePolicy("Name", ({ and }) => ...)`.
 *   Policies from the factory work seamlessly with combinators.
 *   To restrict combined logic to a specific action, wrap it:
     ```typescript
