@@ -34,3 +34,4 @@ run = "bunx typedoc src/gatehouse.ts"
 [tasks.deploy]
 description = "Deploy the project"
 run = "bunx @just-be/deploy"
+depends = ["docs"]
