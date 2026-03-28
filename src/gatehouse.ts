@@ -5,7 +5,7 @@ type CombineOp = 'and' | 'or' | 'not';
 /**
  * Whether a policy grants or denies access when its predicates match.
  */
-type PolicyIntent = 'allow' | 'deny';
+export type PolicyIntent = 'allow' | 'deny';
 
 // ---- Result Types ----
 
@@ -128,7 +128,7 @@ interface Policy<Subject, Resource, Action, Context> {
 /**
  * A value that is either a plain boolean or an Effect that produces a boolean.
  */
-type Effectful<T> = T | Effect.Effect<T>;
+export type Effectful<T> = T | Effect.Effect<T>;
 
 /**
  * A condition checks if access should be granted.
@@ -508,7 +508,7 @@ interface Combinators<Sub, Res, Act, Ctx> {
   not: (policy: Policy<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
 }
 
-type CombineFn<Sub, Res, Act, Ctx> = (combinators: Combinators<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
+export type CombineFn<Sub, Res, Act, Ctx> = (combinators: Combinators<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
 
 /**
  * Compose policies using `and`, `or`, and `not` combinators in a single expression.
