@@ -19,7 +19,7 @@ gatehouse-effect is an Effect-TS port of [gatehouse-ts](https://github.com/9More
 Single-module functional library (`src/gatehouse.ts`). All data types are pure data (no methods) — use standalone functions to inspect results.
 
 - **Policy factories:** `buildRbacPolicy`, `buildAbacPolicy`, `buildRebacPolicy` — create policies for specific authorization models
-- **Combinators:** `combinePolicy(({ and, or, not }) => ...)` — compose policies with boolean logic; `invertPolicy` — invert a single policy
+- **Combinators:** `anyPolicy` — OR (any sub-policy grants); `everyPolicy` — AND (all must grant); `invertPolicy` — invert a single policy; `combinePolicy(({ and, or, not }) => ...)` — compose with boolean logic
 - **`makePolicy`** — creates custom policies from predicate functions (subject/resource/action/context/when)
 - **`checkPermissions`** — curried function: takes policies array, returns evaluator. First-grant-wins. Returns `Effect<AccessGranted, AccessDenied | NoPoliciesError>`
 - **Result functions:** `isGranted`, `formatResult`, `getDisplayTrace`, `formatTrace` — operate on `PolicyEvalResult` or access results

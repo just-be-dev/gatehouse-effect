@@ -16,6 +16,8 @@ Define your domain with Effect Schemas. Types are inferred automatically — no 
 import { Effect, Schema } from 'effect';
 import {
   policyFactory,
+  anyPolicy,
+  everyPolicy,
   combinePolicy,
   invertPolicy,
   checkPermissions,
@@ -295,11 +297,28 @@ const result11 = await Effect.runPromise(
 console.log(`Admin comment private doc: ${isGranted(result11)}`); // Output: true
 ```
 
+You can also use `anyPolicy` and `everyPolicy` directly for simpler cases:
+
+```typescript
+// Any sub-policy grants access (OR)
+const ownerOrAdmin = anyPolicy([isOwnerPolicy, isAdminPolicy]);
+// ownerOrAdmin.name → "IsOwner | IsAdmin"
+
+// All sub-policies must grant access (AND)
+const ownerAndPrivate = everyPolicy([isOwnerPolicy, isPrivatePolicy]);
+// ownerAndPrivate.name → "IsOwner & IsPrivate"
+
+// With a custom name
+const namedPolicy = anyPolicy("CanComment", [isOwnerPolicy, isAdminPolicy]);
+```
+
 **Explanation:**
 
+*   `anyPolicy(policies)` grants access if **any** sub-policy grants access (OR).
+*   `everyPolicy(policies)` grants access only if **all** sub-policies grant access (AND).
+*   `invertPolicy(policy)` inverts a single policy's result.
 *   `combinePolicy(({ and, or, not }) => ...)` composes policies with boolean logic in a single expression.
 *   `define.combine(...)` is the factory-bound version — types flow automatically.
-*   `invertPolicy(policy)` inverts a single policy's result.
 *   Names are auto-generated from the expression: `A & (B | !C)`.
 *   Pass an optional name as the first argument: `combinePolicy("Name", ({ and }) => ...)`.
 *   Policies from the factory work seamlessly with combinators.

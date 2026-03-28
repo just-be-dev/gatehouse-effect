@@ -359,11 +359,11 @@ const wrap = (name: string): string =>
  *
  * @example
  * ```ts
- * buildAndPolicy([ownerPolicy, privatePolicy])
- * buildAndPolicy("OwnerAndPrivate", [ownerPolicy, privatePolicy])
+ * everyPolicy([ownerPolicy, privatePolicy])
+ * everyPolicy("OwnerAndPrivate", [ownerPolicy, privatePolicy])
  * ```
  */
-function buildAndPolicy<Sub, Res, Act, Ctx>(
+function everyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
@@ -415,11 +415,11 @@ function buildAndPolicy<Sub, Res, Act, Ctx>(
  *
  * @example
  * ```ts
- * buildOrPolicy([ownerPolicy, adminPolicy])
- * buildOrPolicy("OwnerOrAdmin", [ownerPolicy, adminPolicy])
+ * anyPolicy([ownerPolicy, adminPolicy])
+ * anyPolicy("OwnerOrAdmin", [ownerPolicy, adminPolicy])
  * ```
  */
-function buildOrPolicy<Sub, Res, Act, Ctx>(
+function anyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
@@ -527,8 +527,8 @@ function combinePolicy<Sub, Res, Act, Ctx>(
   const fn = typeof nameOrFn === 'string' ? maybeFn! : nameOrFn;
 
   const combinators: Combinators<Sub, Res, Act, Ctx> = {
-    and: (...policies) => buildAndPolicy<Sub, Res, Act, Ctx>(policies),
-    or: (...policies) => buildOrPolicy<Sub, Res, Act, Ctx>(policies),
+    and: (...policies) => everyPolicy<Sub, Res, Act, Ctx>(policies),
+    or: (...policies) => anyPolicy<Sub, Res, Act, Ctx>(policies),
     not: (policy) => invertPolicy<Sub, Res, Act, Ctx>(policy),
   };
 
@@ -664,6 +664,8 @@ export {
   formatResult,
   getDisplayTrace,
   GrantedAccessResult,
+  anyPolicy,
+  everyPolicy,
   invertPolicy,
   isGranted,
   NoPoliciesError,

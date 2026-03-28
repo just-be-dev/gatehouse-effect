@@ -97,17 +97,25 @@ console.log(getDisplayTrace(result)); // detailed evaluation trace
 ### Compose policies
 
 ```typescript
-import { combinePolicy, invertPolicy } from "gatehouse-effect";
+import { anyPolicy, everyPolicy, invertPolicy, combinePolicy } from "gatehouse-effect";
+
+// Any sub-policy grants access (OR)
+const canAccess = anyPolicy([rbacPolicy, abacPolicy]);
+// canAccess.name → "RbacPolicy | AbacPolicy"
+
+// All sub-policies must grant access (AND)
+const strictAccess = everyPolicy([rbacPolicy, abacPolicy]);
+// strictAccess.name → "RbacPolicy & AbacPolicy"
+
+// Invert a single policy
+const notGuest = invertPolicy(guestPolicy);
+// notGuest.name → "!GuestPolicy"
 
 // Compose with and/or/not in a single expression
 const policy = combinePolicy(({ and, or, not }) =>
   and(rbacPolicy, or(abacPolicy, not(guestPolicy)))
 );
 // policy.name → "RbacPolicy & (AbacPolicy | !GuestPolicy)"
-
-// Invert a single policy
-const notGuest = invertPolicy(guestPolicy);
-// notGuest.name → "!GuestPolicy"
 ```
 
 For more examples covering ABAC, ReBAC, and advanced composition, see [usage_examples.md](usage_examples.md).
