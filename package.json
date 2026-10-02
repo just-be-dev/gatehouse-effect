@@ -47,6 +47,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "effect": "^4.0.0-beta.40"
+    "effect": "4.0.0"
   }
 }
