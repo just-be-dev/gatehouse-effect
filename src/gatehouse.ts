@@ -86,7 +86,7 @@ class AccessGranted extends Schema.TaggedClass<AccessGranted>()('AccessGranted',
 /**
  * Represents a denied access evaluation (typed error in the Effect error channel).
  */
-class AccessDenied extends Schema.TaggedErrorClass<AccessDenied>()('AccessDenied', {
+class AccessDenied extends Schema.TaggedError<AccessDenied>()('AccessDenied', {
   reason: Schema.String,
   trace: Schema.NullOr(Schema.Any),
 }) {}
@@ -94,7 +94,7 @@ class AccessDenied extends Schema.TaggedErrorClass<AccessDenied>()('AccessDenied
 /**
  * Error for when no policies are configured.
  */
-class NoPoliciesError extends Schema.TaggedErrorClass<NoPoliciesError>()('NoPoliciesError', {
+class NoPoliciesError extends Schema.TaggedError<NoPoliciesError>()('NoPoliciesError', {
   message: Schema.String,
   trace: Schema.NullOr(Schema.Any),
 }) {}

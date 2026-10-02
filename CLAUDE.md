@@ -24,7 +24,7 @@ Single-module functional library (`src/gatehouse.ts`). All data types are pure d
 - **`checkPermissions`** — curried function: takes policies array, returns evaluator. First-grant-wins. Returns `Effect<AccessGranted, AccessDenied | NoPoliciesError>`
 - **Result functions:** `isGranted`, `formatResult`, `getDisplayTrace`, `formatTrace` — operate on `PolicyEvalResult` or access results
 
-All predicates/resolvers return `Effect.Effect<T>`. Errors use `Schema.TaggedErrorClass`, results use `Schema.TaggedClass`/`Data.TaggedClass`. Use `_tag` or `Match.valueTags` for discrimination.
+All predicates/resolvers return `Effect.Effect<T>`. Errors use `Schema.TaggedError`, results use `Schema.TaggedClass`/`Data.TaggedClass`. Use `_tag` or `Match.valueTags` for discrimination.
 
 <!-- effect-solutions:start -->
 ## Effect Best Practices
