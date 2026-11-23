@@ -1,11 +1,11 @@
-import { Data, Effect, Match, Schema } from 'effect';
+import { Data, Effect, Match, Predicate, Schema } from "effect";
 
-type CombineOp = 'and' | 'or' | 'not';
+type CombineOp = "and" | "or" | "not";
 
 /**
  * Whether a policy grants or denies access when its predicates match.
  */
-export type PolicyIntent = 'allow' | 'deny';
+export type PolicyIntent = "allow" | "deny";
 
 // ---- Result Types ----
 
@@ -18,7 +18,7 @@ type PolicyEvalResult = GrantedAccessResult | DeniedAccessResult | CombinedResul
 /**
  * Represents a successful policy evaluation that grants access.
  */
-class GrantedAccessResult extends Schema.TaggedClass<GrantedAccessResult>()('GrantedAccessResult', {
+class GrantedAccessResult extends Schema.TaggedClass<GrantedAccessResult>()("GrantedAccessResult", {
   policyType: Schema.String,
   reason: Schema.NullOr(Schema.String),
 }) {}
@@ -26,7 +26,7 @@ class GrantedAccessResult extends Schema.TaggedClass<GrantedAccessResult>()('Gra
 /**
  * Represents a failed policy evaluation that denies access.
  */
-class DeniedAccessResult extends Schema.TaggedClass<DeniedAccessResult>()('DeniedAccessResult', {
+class DeniedAccessResult extends Schema.TaggedClass<DeniedAccessResult>()("DeniedAccessResult", {
   policyType: Schema.String,
   reason: Schema.NullOr(Schema.String),
 }) {}
@@ -35,14 +35,12 @@ class DeniedAccessResult extends Schema.TaggedClass<DeniedAccessResult>()('Denie
  * Represents a combined result from multiple policies.
  * Kept as Data.TaggedClass due to recursive PolicyEvalResult references.
  */
-class CombinedResult
-  extends Data.TaggedClass('CombinedResult')<{
-    readonly policyType: string;
-    readonly outcome: boolean;
-    readonly operation: CombineOp;
-    readonly children: ReadonlyArray<PolicyEvalResult>;
-  }>
-{}
+class CombinedResult extends Data.TaggedClass("CombinedResult")<{
+  readonly policyType: string;
+  readonly outcome: boolean;
+  readonly operation: CombineOp;
+  readonly children: ReadonlyArray<PolicyEvalResult>;
+}> {}
 
 /**
  * Check if a policy evaluation result grants access.
@@ -60,14 +58,12 @@ function isGranted(result: PolicyEvalResult): boolean {
  */
 function formatResult(result: PolicyEvalResult): string {
   return Match.valueTags(result, {
-    GrantedAccessResult: (r) => `\u2714 ${r.policyType} GRANTED${r.reason ? ' ' + r.reason : ''}`,
-    DeniedAccessResult: (r) => `\u2718 ${r.policyType} DENIED: ${r.reason ? ' ' + r.reason : ''}`,
+    GrantedAccessResult: (r) => `\u2714 ${r.policyType} GRANTED${r.reason ? " " + r.reason : ""}`,
+    DeniedAccessResult: (r) => `\u2718 ${r.policyType} DENIED: ${r.reason ? " " + r.reason : ""}`,
     CombinedResult: (r) => {
-      const outcomeChar = r.outcome ? '\u2714' : '\u2718';
+      const outcomeChar = r.outcome ? "\u2714" : "\u2718";
       const toplevelMessage = `${outcomeChar} ${r.policyType} (${r.operation})`;
-      return [toplevelMessage, ...r.children.map((child) => '  ' + formatResult(child))].join(
-        '\n'
-      );
+      return [toplevelMessage, ...r.children.map((child) => "  " + formatResult(child))].join("\n");
     },
   });
 }
@@ -77,7 +73,7 @@ function formatResult(result: PolicyEvalResult): string {
 /**
  * Represents a granted access evaluation result.
  */
-class AccessGranted extends Schema.TaggedClass<AccessGranted>()('AccessGranted', {
+class AccessGranted extends Schema.TaggedClass<AccessGranted>()("AccessGranted", {
   policyType: Schema.String,
   reason: Schema.NullOr(Schema.String),
   trace: Schema.NullOr(Schema.Any),
@@ -86,7 +82,7 @@ class AccessGranted extends Schema.TaggedClass<AccessGranted>()('AccessGranted',
 /**
  * Represents a denied access evaluation (typed error in the Effect error channel).
  */
-class AccessDenied extends Schema.TaggedError<AccessDenied>()('AccessDenied', {
+class AccessDenied extends Schema.TaggedError<AccessDenied>()("AccessDenied", {
   reason: Schema.String,
   trace: Schema.NullOr(Schema.Any),
 }) {}
@@ -94,20 +90,29 @@ class AccessDenied extends Schema.TaggedError<AccessDenied>()('AccessDenied', {
 /**
  * Error for when no policies are configured.
  */
-class NoPoliciesError extends Schema.TaggedError<NoPoliciesError>()('NoPoliciesError', {
+class NoPoliciesError extends Schema.TaggedError<NoPoliciesError>()("NoPoliciesError", {
   message: Schema.String,
   trace: Schema.NullOr(Schema.Any),
 }) {}
+
+const policyEvalResultTags: ReadonlySet<unknown> = new Set<PolicyEvalResult["_tag"]>([
+  "GrantedAccessResult",
+  "DeniedAccessResult",
+  "CombinedResult",
+]);
+
+const isPolicyEvalResult = (u: unknown): u is PolicyEvalResult =>
+  Predicate.hasProperty(u, "_tag") && policyEvalResultTags.has(u._tag);
 
 /**
  * Get a formatted display trace from an access result or error.
  */
 function getDisplayTrace(result: AccessGranted | AccessDenied | NoPoliciesError): string {
-  const trace = result.trace as PolicyEvalResult | null;
-  if (trace) {
+  const trace: unknown = result.trace;
+  if (isPolicyEvalResult(trace)) {
     return `\nEvaluation Trace:\n${formatResult(trace)}`;
   }
-  return '\n(No evaluation trace available)';
+  return "\n(No evaluation trace available)";
 }
 
 // ---- Policy Types ----
@@ -149,8 +154,10 @@ type RelationshipResolver<Subject, Resource> = (args: {
   relationship: string;
 }) => Effectful<boolean>;
 
+const isEffectValue = <T>(value: Effectful<T>): value is Effect.Effect<T> => Effect.isEffect(value);
+
 const resolve = <T>(value: Effectful<T>): Effect.Effect<T> =>
-  Effect.isEffect(value) ? value : Effect.succeed(value as T);
+  isEffectValue(value) ? value : Effect.succeed(value);
 
 // ---- makePolicy ----
 
@@ -167,10 +174,16 @@ function makePolicy<Sub, Res, Act, Ctx>(
     action?: (act: Act) => Effectful<boolean>;
     context?: (ctx: Ctx) => Effectful<boolean>;
     when?: Condition<Sub, Res, Act, Ctx>;
-  } = {}
+  } = {},
 ): Policy<Sub, Res, Act, Ctx> {
-  const intent = options.intent ?? 'allow';
-  const { subject: subjectPred, resource: resPred, action: actionPred, context: ctxPred, when: extraPred } = options;
+  const intent = options.intent ?? "allow";
+  const {
+    subject: subjectPred,
+    resource: resPred,
+    action: actionPred,
+    context: ctxPred,
+    when: extraPred,
+  } = options;
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -186,12 +199,12 @@ function makePolicy<Sub, Res, Act, Ctx>(
       (extraPred === undefined || (yield* resolve(extraPred(args))));
 
     if (predicateResult) {
-      if (intent === 'allow') {
-        return new GrantedAccessResult({ policyType: name, reason: 'Policy allowed access' });
+      if (intent === "allow") {
+        return new GrantedAccessResult({ policyType: name, reason: "Policy allowed access" });
       }
-      return new DeniedAccessResult({ policyType: name, reason: 'Policy denied access' });
+      return new DeniedAccessResult({ policyType: name, reason: "Policy denied access" });
     }
-    return new DeniedAccessResult({ policyType: name, reason: 'Policy predicate did not match' });
+    return new DeniedAccessResult({ policyType: name, reason: "Policy predicate did not match" });
   });
 
   return { name, evaluateAccess };
@@ -214,7 +227,7 @@ function makePolicy<Sub, Res, Act, Ctx>(
  * ```
  */
 function checkPermissions<Sub, Res, Act, Ctx>(
-  policies: ReadonlyArray<Policy<Sub, Res, Act, Ctx>>
+  policies: ReadonlyArray<Policy<Sub, Res, Act, Ctx>>,
 ): (args: {
   subject: Sub;
   resource: Res;
@@ -223,12 +236,12 @@ function checkPermissions<Sub, Res, Act, Ctx>(
 }) => Effect.Effect<AccessGranted, AccessDenied | NoPoliciesError> {
   return ({ subject, resource, action, context }) => {
     if (!policies.length) {
-      const reason = 'No policies configured';
+      const reason = "No policies configured";
       return Effect.fail(
         new NoPoliciesError({
           message: reason,
-          trace: new DeniedAccessResult({ policyType: 'checkPermissions', reason }),
-        })
+          trace: new DeniedAccessResult({ policyType: "checkPermissions", reason }),
+        }),
       );
     }
 
@@ -246,9 +259,9 @@ function checkPermissions<Sub, Res, Act, Ctx>(
 
         if (isGranted(result)) {
           const combined = new CombinedResult({
-            policyType: 'checkPermissions',
+            policyType: "checkPermissions",
             outcome: true,
-            operation: 'or',
+            operation: "or",
             children: policyResults,
           });
           return new AccessGranted({
@@ -260,16 +273,16 @@ function checkPermissions<Sub, Res, Act, Ctx>(
       }
 
       const combined = new CombinedResult({
-        policyType: 'checkPermissions',
+        policyType: "checkPermissions",
         outcome: false,
-        operation: 'or',
+        operation: "or",
         children: policyResults,
       });
       return yield* new AccessDenied({
-        reason: 'All policies denied access',
+        reason: "All policies denied access",
         trace: combined,
       });
-    }).pipe(Effect.withSpan('checkPermissions'));
+    }).pipe(Effect.withSpan("checkPermissions"));
   };
 }
 
@@ -281,7 +294,7 @@ function checkPermissions<Sub, Res, Act, Ctx>(
 function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
   requiredRolesResolver,
   userRolesResolver,
-  name = 'RbacPolicy',
+  name = "RbacPolicy",
 }: {
   requiredRolesResolver: (res: Res, act: Act) => Effectful<readonly Role[]>;
   userRolesResolver: (sub: Sub) => Effectful<readonly Role[]>;
@@ -301,14 +314,13 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
     const userRoles: readonly Role[] = yield* resolve(userRolesResolver(subject));
     const hasRole: boolean = requiredRoles.some((role) => userRoles.includes(role));
     if (hasRole) {
-      return new GrantedAccessResult({ policyType: name, reason: 'User has required role' });
+      return new GrantedAccessResult({ policyType: name, reason: "User has required role" });
     }
     return new DeniedAccessResult({ policyType: name, reason: "User doesn't have required role" });
   });
 
   return { name, evaluateAccess };
 }
-
 
 // ---- ReBAC ----
 
@@ -318,7 +330,7 @@ function buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
 function buildRebacPolicy<Sub, Res, Act, Ctx>({
   relationship,
   resolver,
-  name = 'RebacPolicy',
+  name = "RebacPolicy",
 }: {
   relationship: string;
   resolver: RelationshipResolver<Sub, Res>;
@@ -350,7 +362,7 @@ function buildRebacPolicy<Sub, Res, Act, Ctx>({
 }
 
 const wrap = (name: string): string =>
-  name.includes(' & ') || name.includes(' | ') ? `(${name})` : name;
+  name.includes(" & ") || name.includes(" | ") ? `(${name})` : name;
 
 // ---- AND Policy ----
 
@@ -365,17 +377,18 @@ const wrap = (name: string): string =>
  */
 function everyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
-  maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
+  maybePolicies?: Policy<Sub, Res, Act, Ctx>[],
 ): Policy<Sub, Res, Act, Ctx> {
-  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+  const policies = typeof nameOrPolicies === "string" ? (maybePolicies ?? []) : nameOrPolicies;
 
   if (!policies.length) {
-    throw new Error('AndPolicy must have at least one policy');
+    throw new Error("AndPolicy must have at least one policy");
   }
 
-  const name = typeof nameOrPolicies === 'string'
-    ? nameOrPolicies
-    : policies.map((p) => wrap(p.name)).join(' & ');
+  const name =
+    typeof nameOrPolicies === "string"
+      ? nameOrPolicies
+      : policies.map((p) => wrap(p.name)).join(" & ");
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -392,7 +405,7 @@ function everyPolicy<Sub, Res, Act, Ctx>(
         return new CombinedResult({
           policyType: name,
           outcome: false,
-          operation: 'and',
+          operation: "and",
           children: results,
         });
       }
@@ -400,7 +413,7 @@ function everyPolicy<Sub, Res, Act, Ctx>(
     return new CombinedResult({
       policyType: name,
       outcome: true,
-      operation: 'and',
+      operation: "and",
       children: results,
     });
   });
@@ -421,17 +434,18 @@ function everyPolicy<Sub, Res, Act, Ctx>(
  */
 function anyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
-  maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
+  maybePolicies?: Policy<Sub, Res, Act, Ctx>[],
 ): Policy<Sub, Res, Act, Ctx> {
-  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+  const policies = typeof nameOrPolicies === "string" ? (maybePolicies ?? []) : nameOrPolicies;
 
   if (!policies.length) {
-    throw new Error('OrPolicy must have at least one policy');
+    throw new Error("OrPolicy must have at least one policy");
   }
 
-  const name = typeof nameOrPolicies === 'string'
-    ? nameOrPolicies
-    : policies.map((p) => wrap(p.name)).join(' | ');
+  const name =
+    typeof nameOrPolicies === "string"
+      ? nameOrPolicies
+      : policies.map((p) => wrap(p.name)).join(" | ");
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -448,7 +462,7 @@ function anyPolicy<Sub, Res, Act, Ctx>(
         return new CombinedResult({
           policyType: name,
           outcome: true,
-          operation: 'or',
+          operation: "or",
           children: results,
         });
       }
@@ -456,7 +470,7 @@ function anyPolicy<Sub, Res, Act, Ctx>(
     return new CombinedResult({
       policyType: name,
       outcome: false,
-      operation: 'or',
+      operation: "or",
       children: results,
     });
   });
@@ -477,10 +491,13 @@ function anyPolicy<Sub, Res, Act, Ctx>(
  */
 function invertPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicy: string | Policy<Sub, Res, Act, Ctx>,
-  maybePolicy?: Policy<Sub, Res, Act, Ctx>
+  maybePolicy?: Policy<Sub, Res, Act, Ctx>,
 ): Policy<Sub, Res, Act, Ctx> {
-  const name = typeof nameOrPolicy === 'string' ? nameOrPolicy : `!${wrap(nameOrPolicy.name)}`;
-  const policy = typeof nameOrPolicy === 'string' ? maybePolicy! : nameOrPolicy;
+  const name = typeof nameOrPolicy === "string" ? nameOrPolicy : `!${wrap(nameOrPolicy.name)}`;
+  const policy = typeof nameOrPolicy === "string" ? maybePolicy : nameOrPolicy;
+  if (policy === undefined) {
+    throw new Error("NotPolicy must have a policy");
+  }
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -492,7 +509,7 @@ function invertPolicy<Sub, Res, Act, Ctx>(
     return new CombinedResult({
       policyType: name,
       outcome: !isGranted(result),
-      operation: 'not',
+      operation: "not",
       children: [result],
     });
   });
@@ -508,7 +525,9 @@ interface Combinators<Sub, Res, Act, Ctx> {
   not: (policy: Policy<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
 }
 
-export type CombineFn<Sub, Res, Act, Ctx> = (combinators: Combinators<Sub, Res, Act, Ctx>) => Policy<Sub, Res, Act, Ctx>;
+export type CombineFn<Sub, Res, Act, Ctx> = (
+  combinators: Combinators<Sub, Res, Act, Ctx>,
+) => Policy<Sub, Res, Act, Ctx>;
 
 /**
  * Compose policies using `and`, `or`, and `not` combinators in a single expression.
@@ -523,8 +542,11 @@ function combinePolicy<Sub, Res, Act, Ctx>(
   nameOrFn: string | CombineFn<Sub, Res, Act, Ctx>,
   maybeFn?: CombineFn<Sub, Res, Act, Ctx>,
 ): Policy<Sub, Res, Act, Ctx> {
-  const name = typeof nameOrFn === 'string' ? nameOrFn : undefined;
-  const fn = typeof nameOrFn === 'string' ? maybeFn! : nameOrFn;
+  const name = typeof nameOrFn === "string" ? nameOrFn : undefined;
+  const fn = typeof nameOrFn === "string" ? maybeFn : nameOrFn;
+  if (fn === undefined) {
+    throw new Error("combinePolicy must have a combine function");
+  }
 
   const combinators: Combinators<Sub, Res, Act, Ctx> = {
     and: (...policies) => everyPolicy<Sub, Res, Act, Ctx>(policies),
@@ -541,6 +563,15 @@ function combinePolicy<Sub, Res, Act, Ctx>(
 }
 
 // ---- Policy Factory ----
+
+type ActionOption<Act> = Act | ReadonlyArray<Act> | ((act: Act) => Effectful<boolean>);
+
+const isActionPredicate = <Act>(
+  action: ActionOption<Act>,
+): action is (act: Act) => Effectful<boolean> => typeof action === "function";
+
+const isActionList = <Act>(action: ActionOption<Act>): action is ReadonlyArray<Act> =>
+  Array.isArray(action);
 
 /**
  * Creates a typed policy factory from schemas. Types are inferred from the
@@ -584,22 +615,26 @@ function policyFactory<
       intent?: PolicyIntent;
       subject?: (sub: Sub) => Effectful<boolean>;
       resource?: (res: Res) => Effectful<boolean>;
-      action?: Act | ReadonlyArray<Act> | ((act: Act) => Effectful<boolean>);
+      action?: ActionOption<Act>;
       context?: (ctx: Ctx) => Effectful<boolean>;
-      when?: (args: { subject: Sub; resource: Res; action: Act; context: Ctx }) => Effectful<boolean>;
-    } = {}
+      when?: (args: {
+        subject: Sub;
+        resource: Res;
+        action: Act;
+        context: Ctx;
+      }) => Effectful<boolean>;
+    } = {},
   ): Policy<Sub, Res, Act, Ctx> {
     let actionPred: ((act: Act) => Effectful<boolean>) | undefined;
 
     if (options.action !== undefined) {
-      if (typeof options.action === 'function') {
-        actionPred = options.action as (act: Act) => Effectful<boolean>;
-      } else if (Array.isArray(options.action)) {
-        const allowed = options.action as ReadonlyArray<Act>;
-        actionPred = (a: Act) => allowed.includes(a);
+      const action = options.action;
+      if (isActionPredicate(action)) {
+        actionPred = action;
+      } else if (isActionList(action)) {
+        actionPred = (a: Act) => action.includes(a);
       } else {
-        const expected = options.action as Act;
-        actionPred = (a: Act) => a === expected;
+        actionPred = (a: Act) => a === action;
       }
     }
 
@@ -619,12 +654,12 @@ function policyFactory<
     options: {
       roles: { [K in Act & string]: ReadonlyArray<Role> };
       userRoles: (sub: Sub) => Effectful<readonly Role[]>;
-    }
+    },
   ): Policy<Sub, Res, Act, Ctx> {
-    const roleMap = options.roles as Record<string, ReadonlyArray<Role>>;
+    const roleMap: Readonly<Record<string, ReadonlyArray<Role>>> = options.roles;
     return buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
       name,
-      requiredRolesResolver: (_res: Res, act: Act) => (roleMap[act as string] ?? []) as Role[],
+      requiredRolesResolver: (_res: Res, act: Act) => roleMap[String(act)] ?? [],
       userRolesResolver: options.userRoles,
     });
   }
@@ -634,7 +669,7 @@ function policyFactory<
     options: {
       relationship: string;
       resolver: (args: { subject: Sub; resource: Res }) => Effectful<boolean>;
-    }
+    },
   ): Policy<Sub, Res, Act, Ctx> {
     return buildRebacPolicy<Sub, Res, Act, Ctx>({
       name,

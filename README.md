@@ -24,12 +24,7 @@ bun add gatehouse-effect effect
 
 ```typescript
 import { Effect, Schema } from "effect";
-import {
-  policyFactory,
-  checkPermissions,
-  isGranted,
-  getDisplayTrace,
-} from "gatehouse-effect";
+import { policyFactory, checkPermissions, isGranted, getDisplayTrace } from "gatehouse-effect";
 
 const User = Schema.Struct({
   id: Schema.String,
@@ -87,7 +82,7 @@ const result = await Effect.runPromise(
     resource: doc,
     action: "write",
     context: ctx,
-  })
+  }),
 );
 
 // If we get here, access was granted (AccessDenied would be in the error channel)
@@ -113,7 +108,7 @@ const notGuest = invertPolicy(guestPolicy);
 
 // Compose with and/or/not in a single expression
 const policy = combinePolicy(({ and, or, not }) =>
-  and(rbacPolicy, or(abacPolicy, not(guestPolicy)))
+  and(rbacPolicy, or(abacPolicy, not(guestPolicy))),
 );
 // policy.name → "RbacPolicy & (AbacPolicy | !GuestPolicy)"
 ```
