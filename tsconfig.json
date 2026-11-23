@@ -7,7 +7,7 @@
     "moduleDetection": "force",
     "verbatimModuleSyntax": true,
 
-    // Type checking only — no emit
+    // Type checking only — tsconfig.build.json emits
     "noEmit": true,
 
     // Type safety
@@ -21,12 +21,18 @@
     // Performance
     "skipLibCheck": true,
 
-    // Effect Language Service
+    // Effect language service, run by the Effect-patched tsrs (`effect-tsgo patch --tsrs`)
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "overrides": [
+          {
+            "include": ["tests/**/*.test.ts"],
+            "options": { "allowedUnstableApis": ["@effect/vitest"] }
+          }
+        ]
       }
     ]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "oxlint.config.ts", "vitest.config.ts"]
 }

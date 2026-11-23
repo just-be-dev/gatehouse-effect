@@ -32,21 +32,31 @@
     }
   },
   "scripts": {
-    "build": "bun build src/gatehouse.ts --outdir dist --target node && tsc -p tsconfig.build.json",
-    "test": "bun test",
-    "typecheck": "tsc",
-    "prepare": "effect-language-service patch",
-    "docs": "bunx typedoc src/gatehouse.ts",
-    "deploy": "bunx @just-be/deploy"
+    "build": "rm -rf dist && tsrs -p tsconfig.build.json",
+    "typecheck": "tsrs --noEmit",
+    "lint": "oxlint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "docs": "typedoc",
+    "deploy": "bunx @just-be/deploy",
+    "prepare": "effect-tsgo patch --tsrs --no-typescript"
   },
   "devDependencies": {
-    "@effect/language-service": "^0.83.1",
-    "@types/bun": "latest",
-    "effect-solutions": "^0.5.2",
-    "typedoc": "^0.28.18",
-    "typescript": "^5"
+    "@effect/tsgo": "0.73.4",
+    "@effect/vitest": "4.1.5",
+    "@mpsuesser/oxlint-plugin-effect": "0.6.0",
+    "oxfmt": "0.80.0",
+    "oxlint": "1.94.0",
+    "tsrs": "7.1.0-beta.tsrs4",
+    "typedoc": "0.28.20",
+    "vitest": "5.1.1"
   },
   "dependencies": {
+    "effect": "4.1.5"
+  },
+  "overrides": {
     "effect": "4.1.5"
   }
 }

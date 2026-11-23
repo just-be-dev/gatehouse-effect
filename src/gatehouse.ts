@@ -1,4 +1,4 @@
-import { Data, Effect, Match, Schema } from 'effect';
+import { Data, Effect, Match, Predicate, Schema } from 'effect';
 
 type CombineOp = 'and' | 'or' | 'not';
 
@@ -99,12 +99,21 @@ class NoPoliciesError extends Schema.TaggedError<NoPoliciesError>()('NoPoliciesE
   trace: Schema.NullOr(Schema.Any),
 }) {}
 
+const policyEvalResultTags: ReadonlySet<unknown> = new Set<PolicyEvalResult['_tag']>([
+  'GrantedAccessResult',
+  'DeniedAccessResult',
+  'CombinedResult',
+]);
+
+const isPolicyEvalResult = (u: unknown): u is PolicyEvalResult =>
+  Predicate.hasProperty(u, '_tag') && policyEvalResultTags.has(u._tag);
+
 /**
  * Get a formatted display trace from an access result or error.
  */
 function getDisplayTrace(result: AccessGranted | AccessDenied | NoPoliciesError): string {
-  const trace = result.trace as PolicyEvalResult | null;
-  if (trace) {
+  const trace: unknown = result.trace;
+  if (isPolicyEvalResult(trace)) {
     return `\nEvaluation Trace:\n${formatResult(trace)}`;
   }
   return '\n(No evaluation trace available)';
@@ -149,8 +158,11 @@ type RelationshipResolver<Subject, Resource> = (args: {
   relationship: string;
 }) => Effectful<boolean>;
 
+const isEffectValue = <T>(value: Effectful<T>): value is Effect.Effect<T> =>
+  Effect.isEffect(value);
+
 const resolve = <T>(value: Effectful<T>): Effect.Effect<T> =>
-  Effect.isEffect(value) ? value : Effect.succeed(value as T);
+  isEffectValue(value) ? value : Effect.succeed(value);
 
 // ---- makePolicy ----
 
@@ -367,7 +379,7 @@ function everyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
-  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+  const policies = typeof nameOrPolicies === 'string' ? (maybePolicies ?? []) : nameOrPolicies;
 
   if (!policies.length) {
     throw new Error('AndPolicy must have at least one policy');
@@ -423,7 +435,7 @@ function anyPolicy<Sub, Res, Act, Ctx>(
   nameOrPolicies: string | Policy<Sub, Res, Act, Ctx>[],
   maybePolicies?: Policy<Sub, Res, Act, Ctx>[]
 ): Policy<Sub, Res, Act, Ctx> {
-  const policies = typeof nameOrPolicies === 'string' ? maybePolicies! : nameOrPolicies;
+  const policies = typeof nameOrPolicies === 'string' ? (maybePolicies ?? []) : nameOrPolicies;
 
   if (!policies.length) {
     throw new Error('OrPolicy must have at least one policy');
@@ -480,7 +492,10 @@ function invertPolicy<Sub, Res, Act, Ctx>(
   maybePolicy?: Policy<Sub, Res, Act, Ctx>
 ): Policy<Sub, Res, Act, Ctx> {
   const name = typeof nameOrPolicy === 'string' ? nameOrPolicy : `!${wrap(nameOrPolicy.name)}`;
-  const policy = typeof nameOrPolicy === 'string' ? maybePolicy! : nameOrPolicy;
+  const policy = typeof nameOrPolicy === 'string' ? maybePolicy : nameOrPolicy;
+  if (policy === undefined) {
+    throw new Error('NotPolicy must have a policy');
+  }
 
   const evaluateAccess = Effect.fn(`${name}.evaluateAccess`)(function* (args: {
     subject: Sub;
@@ -524,7 +539,10 @@ function combinePolicy<Sub, Res, Act, Ctx>(
   maybeFn?: CombineFn<Sub, Res, Act, Ctx>,
 ): Policy<Sub, Res, Act, Ctx> {
   const name = typeof nameOrFn === 'string' ? nameOrFn : undefined;
-  const fn = typeof nameOrFn === 'string' ? maybeFn! : nameOrFn;
+  const fn = typeof nameOrFn === 'string' ? maybeFn : nameOrFn;
+  if (fn === undefined) {
+    throw new Error('combinePolicy must have a combine function');
+  }
 
   const combinators: Combinators<Sub, Res, Act, Ctx> = {
     and: (...policies) => everyPolicy<Sub, Res, Act, Ctx>(policies),
@@ -541,6 +559,15 @@ function combinePolicy<Sub, Res, Act, Ctx>(
 }
 
 // ---- Policy Factory ----
+
+type ActionOption<Act> = Act | ReadonlyArray<Act> | ((act: Act) => Effectful<boolean>);
+
+const isActionPredicate = <Act>(
+  action: ActionOption<Act>
+): action is (act: Act) => Effectful<boolean> => typeof action === 'function';
+
+const isActionList = <Act>(action: ActionOption<Act>): action is ReadonlyArray<Act> =>
+  Array.isArray(action);
 
 /**
  * Creates a typed policy factory from schemas. Types are inferred from the
@@ -584,7 +611,7 @@ function policyFactory<
       intent?: PolicyIntent;
       subject?: (sub: Sub) => Effectful<boolean>;
       resource?: (res: Res) => Effectful<boolean>;
-      action?: Act | ReadonlyArray<Act> | ((act: Act) => Effectful<boolean>);
+      action?: ActionOption<Act>;
       context?: (ctx: Ctx) => Effectful<boolean>;
       when?: (args: { subject: Sub; resource: Res; action: Act; context: Ctx }) => Effectful<boolean>;
     } = {}
@@ -592,14 +619,13 @@ function policyFactory<
     let actionPred: ((act: Act) => Effectful<boolean>) | undefined;
 
     if (options.action !== undefined) {
-      if (typeof options.action === 'function') {
-        actionPred = options.action as (act: Act) => Effectful<boolean>;
-      } else if (Array.isArray(options.action)) {
-        const allowed = options.action as ReadonlyArray<Act>;
-        actionPred = (a: Act) => allowed.includes(a);
+      const action = options.action;
+      if (isActionPredicate(action)) {
+        actionPred = action;
+      } else if (isActionList(action)) {
+        actionPred = (a: Act) => action.includes(a);
       } else {
-        const expected = options.action as Act;
-        actionPred = (a: Act) => a === expected;
+        actionPred = (a: Act) => a === action;
       }
     }
 
@@ -621,10 +647,10 @@ function policyFactory<
       userRoles: (sub: Sub) => Effectful<readonly Role[]>;
     }
   ): Policy<Sub, Res, Act, Ctx> {
-    const roleMap = options.roles as Record<string, ReadonlyArray<Role>>;
+    const roleMap: Readonly<Record<string, ReadonlyArray<Role>>> = options.roles;
     return buildRbacPolicy<Sub, Res, Act, Ctx, Role>({
       name,
-      requiredRolesResolver: (_res: Res, act: Act) => (roleMap[act as string] ?? []) as Role[],
+      requiredRolesResolver: (_res: Res, act: Act) => roleMap[String(act)] ?? [],
       userRolesResolver: options.userRoles,
     });
   }

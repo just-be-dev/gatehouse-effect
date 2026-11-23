@@ -1,7 +1,7 @@
 {
     "projectDocuments": ["README.md", "usage_examples.md"],
     "entryPointStrategy": "expand",
-    "entryPoints": ["src/index.ts"],
+    "entryPoints": ["src/gatehouse.ts"],
     "out": "docs",
     "excludeInternal": true,
     "excludePrivate": true,

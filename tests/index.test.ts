@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import {
   checkPermissions,
@@ -48,7 +48,8 @@ const define = policyFactory({
 });
 
 describe("RBAC Policy", () => {
-  test("should grant access when user has required role", async () => {
+  it.effect("should grant access when user has required role", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["admin"],
@@ -77,18 +78,17 @@ describe("RBAC Policy", () => {
       userRoles: (sub: Subject) => sub.roles,
     });
 
-    const result = await Effect.runPromise(
-      rbacPolicy.evaluateAccess({
+    const result = yield* rbacPolicy.evaluateAccess({
         subject,
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should deny access when user doesn't have required role", async () => {
+  it.effect("should deny access when user doesn't have required role", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -117,20 +117,19 @@ describe("RBAC Policy", () => {
       userRoles: (sub: Subject) => sub.roles,
     });
 
-    const result = await Effect.runPromise(
-      rbacPolicy.evaluateAccess({
+    const result = yield* rbacPolicy.evaluateAccess({
         subject,
         resource,
         action: "delete",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 });
 
 describe("ABAC Policy", () => {
-  test("should grant access based on attributes", async () => {
+  it.effect("should grant access based on attributes", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -154,18 +153,17 @@ describe("ABAC Policy", () => {
         resource.isPublic || subject.department === resource.department,
     });
 
-    const result = await Effect.runPromise(
-      abacPolicy.evaluateAccess({
+    const result = yield* abacPolicy.evaluateAccess({
         subject,
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should deny access when attributes don't match", async () => {
+  it.effect("should deny access when attributes don't match", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -189,20 +187,19 @@ describe("ABAC Policy", () => {
         resource.isPublic || subject.department === resource.department,
     });
 
-    const result = await Effect.runPromise(
-      abacPolicy.evaluateAccess({
+    const result = yield* abacPolicy.evaluateAccess({
         subject,
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 });
 
 describe("ReBAC Policy", () => {
-  test("should grant access based on relationship", async () => {
+  it.effect("should grant access based on relationship", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -226,18 +223,17 @@ describe("ReBAC Policy", () => {
       resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
-    const result = await Effect.runPromise(
-      rebacPolicy.evaluateAccess({
+    const result = yield* rebacPolicy.evaluateAccess({
         subject,
         resource,
         action: "write",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should deny access when relationship doesn't exist", async () => {
+  it.effect("should deny access when relationship doesn't exist", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -261,16 +257,14 @@ describe("ReBAC Policy", () => {
       resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) => subject.id === resource.ownerId,
     });
 
-    const result = await Effect.runPromise(
-      rebacPolicy.evaluateAccess({
+    const result = yield* rebacPolicy.evaluateAccess({
         subject,
         resource,
         action: "write",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 });
 
 describe("Policy Combinators", () => {
@@ -286,7 +280,8 @@ describe("Policy Combinators", () => {
     isEmergency: false,
   };
 
-  test("AND policy should grant access when all policies grant access", async () => {
+  it.effect("AND policy should grant access when all policies grant access", () =>
+  Effect.gen(function* () {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user1",
@@ -310,13 +305,12 @@ describe("Policy Combinators", () => {
     });
 
     const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("AND policy should deny access when any policy denies access", async () => {
+  it.effect("AND policy should deny access when any policy denies access", () =>
+  Effect.gen(function* () {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user2",
@@ -340,13 +334,12 @@ describe("Policy Combinators", () => {
     });
 
     const policy = define.combine(({ and }) => and(rbacPolicy, rebacPolicy));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 
-  test("OR policy should grant access when any policy grants access", async () => {
+  it.effect("OR policy should grant access when any policy grants access", () =>
+  Effect.gen(function* () {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user2",
@@ -370,13 +363,12 @@ describe("Policy Combinators", () => {
     });
 
     const policy = define.combine(({ or }) => or(rbacPolicy, rebacPolicy));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("OR policy should deny access when all policies deny access", async () => {
+  it.effect("OR policy should deny access when all policies deny access", () =>
+  Effect.gen(function* () {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user2",
@@ -401,18 +393,17 @@ describe("Policy Combinators", () => {
 
     const nonAdmin: Subject = { ...subject, roles: ["user"] };
     const policy = define.combine(({ or }) => or(rbacPolicy, rebacPolicy));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: nonAdmin,
         resource,
         action: "admin",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 
-  test("invertPolicy should invert the result", async () => {
+  it.effect("invertPolicy should invert the result", () =>
+  Effect.gen(function* () {
     const resource: Resource = {
       id: "resource1",
       ownerId: "user2",
@@ -424,17 +415,13 @@ describe("Policy Combinators", () => {
       resource: (r: Resource) => r.isPublic,
     });
 
-    const normalResult = await Effect.runPromise(
-      abacPolicy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const normalResult = yield* abacPolicy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(normalResult)).toBe(true);
 
     const notPolicy = invertPolicy(abacPolicy);
-    const notResult = await Effect.runPromise(
-      notPolicy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const notResult = yield* notPolicy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(notResult)).toBe(false);
-  });
+  }));
 });
 
 describe("define (custom policies)", () => {
@@ -450,7 +437,8 @@ describe("define (custom policies)", () => {
     isPublic: true,
   };
 
-  test("should create a policy with subject predicate", async () => {
+  it.effect("should create a policy with subject predicate", () =>
+  Effect.gen(function* () {
     const policy = define("AdminOnly", {
       subject: (sub: Subject) => sub.roles.includes("admin"),
     });
@@ -461,124 +449,113 @@ describe("define (custom policies)", () => {
       groups: [],
       department: "IT",
     };
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: admin,
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should create a policy with resource predicate", async () => {
+  it.effect("should create a policy with resource predicate", () =>
+  Effect.gen(function* () {
     const policy = define("PublicResourcesOnly", {
       resource: (res) => res.isPublic,
     });
 
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should create a policy with single action literal", async () => {
+  it.effect("should create a policy with single action literal", () =>
+  Effect.gen(function* () {
     const policy = define("ReadOnly", { action: "read" });
 
-    const granted = await Effect.runPromise(
-      policy.evaluateAccess({
+    const granted = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(granted)).toBe(true);
 
-    const denied = await Effect.runPromise(
-      policy.evaluateAccess({
+    const denied = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "write",
         context,
-      }),
-    );
+      });
     expect(isGranted(denied)).toBe(false);
-  });
+  }));
 
-  test("should create a policy with action array", async () => {
+  it.effect("should create a policy with action array", () =>
+  Effect.gen(function* () {
     const policy = define("ReadOrWrite", { action: ["read", "write"] });
 
-    const read = await Effect.runPromise(
-      policy.evaluateAccess({
+    const read = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(read)).toBe(true);
 
-    const del = await Effect.runPromise(
-      policy.evaluateAccess({
+    const del = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "delete",
         context,
-      }),
-    );
+      });
     expect(isGranted(del)).toBe(false);
-  });
+  }));
 
-  test("should create a policy with context predicate", async () => {
+  it.effect("should create a policy with context predicate", () =>
+  Effect.gen(function* () {
     const policy = define("EmergencyOverride", {
       context: (ctx: Context) => ctx.isEmergency,
     });
 
     const emergencyContext: Context = { ...context, isEmergency: true };
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "admin",
         context: emergencyContext,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should create a policy with multiple conditions", async () => {
+  it.effect("should create a policy with multiple conditions", () =>
+  Effect.gen(function* () {
     const policy = define("SameDepartmentReadOnly", {
       action: "read",
       when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         subject.department === resource.department,
     });
 
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: { id: "user1", roles: ["user"], groups: [], department: "IT" },
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("should respect deny intent", async () => {
+  it.effect("should respect deny intent", () =>
+  Effect.gen(function* () {
     const policy = define("ExplicitDenyForAdmins", {
       subject: (sub: Subject) => sub.roles.includes("admin"),
       intent: "deny",
     });
 
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({
+    const result = yield* policy.evaluateAccess({
         subject: {
           id: "user1",
           roles: ["admin"],
@@ -588,10 +565,9 @@ describe("define (custom policies)", () => {
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 });
 
 describe("checkPermissions", () => {
@@ -601,7 +577,8 @@ describe("checkPermissions", () => {
     isEmergency: false,
   };
 
-  test("should grant access when any policy grants access", async () => {
+  it.effect("should grant access when any policy grants access", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -630,15 +607,14 @@ describe("checkPermissions", () => {
     });
 
     const check = checkPermissions([rbacPolicy, abacPolicy]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }).pipe(
+    const result = yield* check({ subject, resource, action: "read", context }).pipe(
         Effect.catch((e) => Effect.succeed(e)),
-      ),
-    );
+      );
     expect(result._tag).toBe("AccessGranted");
-  });
+  }));
 
-  test("should deny access when all policies deny access", async () => {
+  it.effect("should deny access when all policies deny access", () =>
+  Effect.gen(function* () {
     const subject: Subject = {
       id: "user1",
       roles: ["user"],
@@ -669,18 +645,16 @@ describe("checkPermissions", () => {
     });
 
     const check = checkPermissions([rbacPolicy, abacPolicy]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "write", context }).pipe(
+    const result = yield* check({ subject, resource, action: "write", context }).pipe(
         Effect.catch((e) => Effect.succeed(e)),
-      ),
-    );
+      );
     expect(result._tag).toBe("AccessDenied");
-  });
+  }));
 
-  test("should deny access when no policies are configured", async () => {
+  it.effect("should deny access when no policies are configured", () =>
+  Effect.gen(function* () {
     const check = checkPermissions<Subject, Resource, Action, Context>([]);
-    const result = await Effect.runPromise(
-      check({
+    const result = yield* check({
         subject: {
           id: "user1",
           roles: ["admin"],
@@ -695,10 +669,9 @@ describe("checkPermissions", () => {
         },
         action: "read",
         context,
-      }).pipe(Effect.catch((e) => Effect.succeed(e))),
-    );
+      }).pipe(Effect.catch((e) => Effect.succeed(e)));
     expect(result._tag).toBe("NoPoliciesError");
-  });
+  }));
 });
 
 describe("Effectful predicates", () => {
@@ -720,45 +693,40 @@ describe("Effectful predicates", () => {
     isEmergency: false,
   };
 
-  test("action as function predicate", async () => {
+  it.effect("action as function predicate", () =>
+  Effect.gen(function* () {
     const policy = define("CustomActionCheck", {
       action: (a: Action) => a === "read" || a === "write",
     });
 
-    const read = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const read = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(read)).toBe(true);
 
-    const del = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "delete", context }),
-    );
+    const del = yield* policy.evaluateAccess({ subject, resource, action: "delete", context });
     expect(isGranted(del)).toBe(false);
-  });
+  }));
 
-  test("when predicate returning Effect", async () => {
+  it.effect("when predicate returning Effect", () =>
+  Effect.gen(function* () {
     const policy = define("EffectfulWhen", {
       when: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         Effect.succeed(subject.department === resource.department),
     });
 
-    const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const granted = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(granted)).toBe(true);
 
-    const denied = await Effect.runPromise(
-      policy.evaluateAccess({
+    const denied = yield* policy.evaluateAccess({
         subject: { ...subject, department: "Sales" },
         resource,
         action: "read",
         context,
-      }),
-    );
+      });
     expect(isGranted(denied)).toBe(false);
-  });
+  }));
 
-  test("mixed plain and Effect predicates in one policy", async () => {
+  it.effect("mixed plain and Effect predicates in one policy", () =>
+  Effect.gen(function* () {
     const policy = define("MixedPredicates", {
       subject: (s: Subject) => s.roles.includes("admin"), // plain boolean
       resource: (r: Resource) => Effect.succeed(r.isPublic), // Effect
@@ -766,13 +734,12 @@ describe("Effectful predicates", () => {
       context: (ctx: Context) => !ctx.isEmergency, // plain boolean
     });
 
-    const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const granted = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(granted)).toBe(true);
-  });
+  }));
 
-  test("rbac with effectful userRoles resolver", async () => {
+  it.effect("rbac with effectful userRoles resolver", () =>
+  Effect.gen(function* () {
     const policy = define.rbac("EffectfulRbac", {
       roles: {
         read: ["admin"],
@@ -783,24 +750,21 @@ describe("Effectful predicates", () => {
       userRoles: (s: Subject) => Effect.succeed(s.roles),
     });
 
-    const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const granted = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(granted)).toBe(true);
-  });
+  }));
 
-  test("rebac with effectful resolver", async () => {
+  it.effect("rebac with effectful resolver", () =>
+  Effect.gen(function* () {
     const policy = define.rebac("EffectfulRebac", {
       relationship: "owner",
       resolver: ({ subject, resource }: { subject: Subject; resource: Resource }) =>
         Effect.succeed(subject.id === resource.ownerId),
     });
 
-    const granted = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const granted = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(granted)).toBe(true);
-  });
+  }));
 });
 
 describe("Combinator named overloads", () => {
@@ -825,34 +789,31 @@ describe("Combinator named overloads", () => {
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
-  test("combinePolicy with custom name for and", async () => {
+  it.effect("combinePolicy with custom name for and", () =>
+  Effect.gen(function* () {
     const policy = define.combine("MyCustomAnd", ({ and }) =>
       and(allow, allow),
     );
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
     expect(policy.name).toBe("MyCustomAnd");
-  });
+  }));
 
-  test("combinePolicy with custom name for or", async () => {
+  it.effect("combinePolicy with custom name for or", () =>
+  Effect.gen(function* () {
     const policy = define.combine("MyCustomOr", ({ or }) => or(deny, allow));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
     expect(policy.name).toBe("MyCustomOr");
-  });
+  }));
 
-  test("invertPolicy with custom name appears in trace", async () => {
+  it.effect("invertPolicy with custom name appears in trace", () =>
+  Effect.gen(function* () {
     const policy = invertPolicy("MyCustomNot", deny);
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
     expect(formatResult(result)).toContain("MyCustomNot");
-  });
+  }));
 });
 
 describe("Edge cases", () => {
@@ -877,55 +838,50 @@ describe("Edge cases", () => {
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
-  test("single policy in AND", async () => {
+  it.effect("single policy in AND", () =>
+  Effect.gen(function* () {
     const policy = define.combine(({ and }) => and(allow));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("single policy in OR", async () => {
+  it.effect("single policy in OR", () =>
+  Effect.gen(function* () {
     const policy = define.combine(({ or }) => or(deny));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 
-  test("NOT(NOT(policy)) equals original", async () => {
+  it.effect("NOT(NOT(policy)) equals original", () =>
+  Effect.gen(function* () {
     const doubleNot = invertPolicy(invertPolicy(allow));
-    const result = await Effect.runPromise(
-      doubleNot.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* doubleNot.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("intent:deny with non-matching predicates still denies", async () => {
+  it.effect("intent:deny with non-matching predicates still denies", () =>
+  Effect.gen(function* () {
     const policy = define("DenyButNoMatch", {
       subject: (s: Subject) => s.roles.includes("nonexistent"),
       intent: "deny",
     });
 
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     // Predicates don't match → DeniedAccessResult("Policy predicate did not match")
     // NOT a grant — deny intent only fires when predicates DO match
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 
-  test("intent:deny with matching predicates denies", async () => {
+  it.effect("intent:deny with matching predicates denies", () =>
+  Effect.gen(function* () {
     const policy = define("DenyAndMatch", {
       subject: (s: Subject) => s.roles.includes("admin"),
       intent: "deny",
     });
 
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 });
 
 describe("formatResult and getDisplayTrace", () => {
@@ -947,61 +903,56 @@ describe("formatResult and getDisplayTrace", () => {
     isEmergency: false,
   };
 
-  test("formatResult on granted policy result", async () => {
+  it.effect("formatResult on granted policy result", () =>
+  Effect.gen(function* () {
     const policy = define("GrantPolicy", {});
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     const formatted = formatResult(result);
     expect(formatted).toContain("GrantPolicy");
     expect(formatted).toContain("GRANTED");
-  });
+  }));
 
-  test("formatResult on denied policy result", async () => {
+  it.effect("formatResult on denied policy result", () =>
+  Effect.gen(function* () {
     const policy = define("DenyPolicy", { subject: () => false });
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     const formatted = formatResult(result);
     expect(formatted).toContain("DenyPolicy");
     expect(formatted).toContain("DENIED");
-  });
+  }));
 
-  test("formatResult on combined result shows children", async () => {
+  it.effect("formatResult on combined result shows children", () =>
+  Effect.gen(function* () {
     const p1 = define("PolicyA", { subject: () => false });
     const p2 = define("PolicyB", {});
     const policy = define.combine("CombinedOr", ({ or }) => or(p1, p2));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     const formatted = formatResult(result);
     expect(formatted).toContain("PolicyA");
     expect(formatted).toContain("PolicyB");
-  });
+  }));
 
-  test("getDisplayTrace on AccessGranted", async () => {
+  it.effect("getDisplayTrace on AccessGranted", () =>
+  Effect.gen(function* () {
     const policy = define("TraceGrant", {});
     const check = checkPermissions([policy]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }),
-    );
+    const result = yield* check({ subject, resource, action: "read", context });
     const trace = getDisplayTrace(result);
     expect(trace).toContain("TraceGrant");
     expect(trace).toContain("GRANTED");
-  });
+  }));
 
-  test("getDisplayTrace on AccessDenied", async () => {
+  it.effect("getDisplayTrace on AccessDenied", () =>
+  Effect.gen(function* () {
     const policy = define("TraceDeny", { subject: () => false });
     const check = checkPermissions([policy]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }).pipe(
+    const result = yield* check({ subject, resource, action: "read", context }).pipe(
         Effect.catch((e) => Effect.succeed(e)),
-      ),
-    );
+      );
     const trace = getDisplayTrace(result);
     expect(trace).toContain("TraceDeny");
     expect(trace).toContain("DENIED");
-  });
+  }));
 });
 
 describe("checkPermissions ordering and traces", () => {
@@ -1023,7 +974,8 @@ describe("checkPermissions ordering and traces", () => {
     isEmergency: false,
   };
 
-  test("first-grant-wins: stops at first granting policy", async () => {
+  it.effect("first-grant-wins: stops at first granting policy", () =>
+  Effect.gen(function* () {
     let thirdPolicyCalled = false;
 
     const deny1 = define("Deny1", { subject: () => false });
@@ -1037,46 +989,42 @@ describe("checkPermissions ordering and traces", () => {
     };
 
     const check = checkPermissions([deny1, grant, spy]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }),
-    );
+    const result = yield* check({ subject, resource, action: "read", context });
 
     expect(result._tag).toBe("AccessGranted");
     expect(result.policyType).toBe("Grant");
     expect(thirdPolicyCalled).toBe(false);
-  });
+  }));
 
-  test("AccessGranted contains correct policyType", async () => {
+  it.effect("AccessGranted contains correct policyType", () =>
+  Effect.gen(function* () {
     const p1 = define("FirstPolicy", { subject: () => false });
     const p2 = define("SecondPolicy", {});
 
     const check = checkPermissions([p1, p2]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }),
-    );
+    const result = yield* check({ subject, resource, action: "read", context });
 
     expect(result._tag).toBe("AccessGranted");
     expect(result.policyType).toBe("SecondPolicy");
-  });
+  }));
 
-  test("AccessDenied trace contains all evaluated policies", async () => {
+  it.effect("AccessDenied trace contains all evaluated policies", () =>
+  Effect.gen(function* () {
     const p1 = define("PolicyA", { subject: () => false });
     const p2 = define("PolicyB", { subject: () => false });
     const p3 = define("PolicyC", { subject: () => false });
 
     const check = checkPermissions([p1, p2, p3]);
-    const result = await Effect.runPromise(
-      check({ subject, resource, action: "read", context }).pipe(
+    const result = yield* check({ subject, resource, action: "read", context }).pipe(
         Effect.catch((e) => Effect.succeed(e)),
-      ),
-    );
+      );
 
     expect(result._tag).toBe("AccessDenied");
     const trace = getDisplayTrace(result);
     expect(trace).toContain("PolicyA");
     expect(trace).toContain("PolicyB");
     expect(trace).toContain("PolicyC");
-  });
+  }));
 });
 
 describe("combinePolicy", () => {
@@ -1101,75 +1049,67 @@ describe("combinePolicy", () => {
   const allow = define("AllowPolicy", {});
   const deny = define("DenyPolicy", { intent: "deny" });
 
-  test("and combinator grants when all grant", async () => {
+  it.effect("and combinator grants when all grant", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>(({ and }) => and(allow, allow));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("and combinator denies when any denies", async () => {
+  it.effect("and combinator denies when any denies", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>(({ and }) => and(allow, deny));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(false);
-  });
+  }));
 
-  test("or combinator grants when any grants", async () => {
+  it.effect("or combinator grants when any grants", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>(({ or }) => or(deny, allow));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("not combinator inverts result", async () => {
+  it.effect("not combinator inverts result", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>(({ not }) => not(deny));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("nested composition: and(policy1, or(policy3, not(policy2)))", async () => {
+  it.effect("nested composition: and(policy1, or(policy3, not(policy2)))", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>(({ and, or, not }) =>
       and(allow, or(deny, not(deny))),
     );
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("named combinePolicy sets policy name", async () => {
+  it.effect("named combinePolicy sets policy name", () =>
+  Effect.gen(function* () {
     const policy = combinePolicy<Subject, Resource, Action, Context>("MyCombo", ({ and }) => and(allow, allow));
     expect(policy.name).toBe("MyCombo");
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("factory combine method works", async () => {
+  it.effect("factory combine method works", () =>
+  Effect.gen(function* () {
     const policy = define.combine(({ and, not }) => and(allow, not(deny)));
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("factory combine with name", async () => {
+  it.effect("factory combine with name", () =>
+  Effect.gen(function* () {
     const policy = define.combine("FactoryCombo", ({ or }) => or(deny, allow));
     expect(policy.name).toBe("FactoryCombo");
-    const result = await Effect.runPromise(
-      policy.evaluateAccess({ subject, resource, action: "read", context }),
-    );
+    const result = yield* policy.evaluateAccess({ subject, resource, action: "read", context });
     expect(isGranted(result)).toBe(true);
-  });
+  }));
 
-  test("auto-generated names use symbolic operators", async () => {
+  it("auto-generated names use symbolic operators", () => {
     const p1 = define("A", {});
     const p2 = define("B", { intent: "deny" });
     const p3 = define("C", {});
