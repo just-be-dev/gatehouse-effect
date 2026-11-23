@@ -1,9 +1,9 @@
 {
-    "projectDocuments": ["README.md", "usage_examples.md"],
-    "entryPointStrategy": "expand",
-    "entryPoints": ["src/gatehouse.ts"],
-    "out": "docs",
-    "excludeInternal": true,
-    "excludePrivate": true,
-    "excludeProtected": true
+  "projectDocuments": ["README.md", "usage_examples.md"],
+  "entryPointStrategy": "expand",
+  "entryPoints": ["src/gatehouse.ts"],
+  "out": "docs",
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeProtected": true
 }

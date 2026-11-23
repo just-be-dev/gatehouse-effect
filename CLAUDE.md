@@ -59,6 +59,7 @@ Single-module functional library (`src/gatehouse.ts`). All data types are pure d
 All predicates/resolvers return `Effect.Effect<T>`. Errors use `Schema.TaggedError`, results use `Schema.TaggedClass`/`Data.TaggedClass`. Use `_tag` or `Match.valueTags` for discrimination.
 
 <!-- effect-solutions:start -->
+
 ## Effect Best Practices
 
 **IMPORTANT:** Always consult effect-solutions before writing Effect code.
